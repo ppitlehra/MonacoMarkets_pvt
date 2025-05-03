@@ -1,100 +1,95 @@
-# SEI CLOB Implementation README
+# MonacoMarkets CLOB Implementation
 
 ## Overview
 
-This repository contains a Central Limit Order Book (CLOB) implementation for the SEI blockchain, designed to serve as a liquidity engine for Symphony (an aggregator). The implementation is inspired by DeepBook's architecture but adapted for SEI using Solidity.
+This repository contains a Solidity implementation of a Central Limit Order Book (CLOB) system, initially designed as a high-performance, custody-free liquidity engine, primarily for integration with aggregators like Symphony. The architecture draws inspiration from established DEX designs and is built using Hardhat.
 
 ## Key Features
 
-- **Three-Layer Architecture**: Book → State → Vault for clear separation of concerns
-- **Multiple Order Types**: Support for LIMIT, MARKET, IOC, and FOK orders
-- **Custody-Free Settlement**: Direct trader-to-trader transfers without taking custody
-- **Symphony Integration**: Dedicated adapter for Symphony as an aggregator
-- **Price-Time Priority**: Efficient order matching with price-time priority
-- **Flexible Fee Structure**: Configurable maker and taker fees
+- **Modular Architecture**: Core components include `CLOB`, `Book`, `State`, and `Vault` for distinct responsibilities.
+- **Multiple Order Types**: Supports standard order types (e.g., LIMIT, MARKET - specific types depend on `CLOB.sol` implementation details).
+- **Custody-Free Settlement**: `Vault.sol` handles atomic, custody-free settlement directly between traders upon a match.
+- **Synchronous Aggregator Integration**: `SymphonyAdapter.sol` facilitates integration with external aggregators (like a mocked Symphony) via a synchronous `executeSwapViaCLOB` function call.
+- **Price-Time Priority**: `Book.sol` implements order matching based on price-time priority.
+- **Configurable Fees**: `Vault.sol` allows setting maker and taker fees.
 
 ## Directory Structure
 
 ```
-sei-clob/
+.
 ├── contracts/
-│   ├── interfaces/       # Contract interfaces
-│   ├── libraries/        # Utility libraries
-│   ├── test/             # Test contracts
-│   ├── Book.sol          # Order book implementation
-│   ├── CLOB.sol          # Main CLOB contract
-│   ├── CustodyFreeVault.sol # Custody-free settlement
-│   ├── EnhancedBook.sol  # Enhanced order book with improved matching
-│   ├── EnhancedCLOB.sol  # Enhanced CLOB with Symphony integration
+│   ├── interfaces/       # Solidity interfaces (IState, IVault, ICLOB, etc.)
+│   ├── mocks/            # Mock contracts (MockERC20, MockSymphony)
+│   ├── Book.sol          # Order book matching logic
+│   ├── CLOB.sol          # Main CLOB entry point and coordination contract
 │   ├── State.sol         # Order state management
-│   ├── SymphonyAdapter.sol # Symphony integration adapter
-│   └── Vault.sol         # Basic vault implementation
+│   ├── SymphonyAdapter.sol # Synchronous integration adapter
+│   └── Vault.sol         # Custody-free settlement and fee handling
 ├── docs/
-│   └── DOCUMENTATION.md  # Detailed documentation
-└── README.md             # This file
+│   └── Architecture_02052025.md # Comprehensive architecture document
+├── ignition/             # Hardhat Ignition deployment scripts (if used)
+├── node_modules/         # Project dependencies
+├── scripts/              # Deployment and utility scripts (e.g., deploy.ts)
+├── test/                 # Hardhat tests (TypeScript)
+├── .gitignore
+├── hardhat.config.ts     # Hardhat configuration
+├── package.json          # Project metadata and dependencies
+├── package-lock.json
+├── README.md             # This file
+└── tsconfig.json         # TypeScript configuration
 ```
+*(Note: Some directories like `deepbookv3-main` and `Symphony` might exist but are not part of the core Hardhat project structure shown here)*
 
 ## Getting Started
 
 ### Prerequisites
 
-- Solidity ^0.8.17
-- OpenZeppelin Contracts
+- Node.js (v18+)
+- npm
 
 ### Installation
 
-1. Clone the repository:
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/ppitlehra/MonacoMarkets_pvt.git
+    cd MonacoMarkets_pvt
+    ```
+
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+
+### Compilation
+
+Compile the Solidity contracts:
 ```bash
-git clone https://github.com/your-username/sei-clob.git
-cd sei-clob
+npx hardhat compile
 ```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-### Usage
-
-The main entry point for interacting with the CLOB is the `CLOB` contract. See the `DOCUMENTATION.md` file for detailed usage instructions.
-
-## Core Components
-
-### CLOB
-
-The main contract that coordinates the Book, State, and Vault components. It provides functions for placing and canceling orders, querying the order book, and integrating with Symphony.
-
-### Book
-
-Manages the order book and matching logic. It maintains price levels, matches orders based on price-time priority, and supports different order types.
-
-### State
-
-Stores order details and manages the order lifecycle. It keeps track of order status, filled quantities, and trader information.
-
-### Vault
-
-Handles token settlement with custody-free transfers. It calculates fees, executes transfers between traders, and ensures no residual balances are held.
-
-### SymphonyAdapter
-
-Provides integration with Symphony as an aggregator. It allows Symphony to relay orders to the CLOB and supports batch order processing.
+This will generate TypeChain artifacts in `typechain-types/` and contract artifacts in `artifacts/`.
 
 ## Testing
 
-The implementation includes comprehensive test contracts:
+Run the full test suite (written in TypeScript using Hardhat/Waffle/Chai):
+```bash
+npx hardhat test
+```
 
-- **CLOBTestHelper**: Tests basic CLOB functionality and order types
-- **SymphonyIntegrationTest**: Tests Symphony integration
-- **CustodyFreeTest**: Tests custody-free settlement
-- **MockToken**: Provides mock ERC20 tokens for testing
+To run a specific test file:
+```bash
+npx hardhat test test/Vault.test.ts
+```
+
+## Core Components
+
+-   **`CLOB.sol`**: The primary user-facing contract. Handles order placement (`placeOrder`, `placeMarketOrder`, etc.) and cancellation. Coordinates interactions between the `Book`, `State`, and `Vault`. Routes external swaps via the `SymphonyAdapter`.
+-   **`Book.sol`**: Manages the order book data structures (bids and asks). Implements the matching logic based on price-time priority. Generates `Settlement` structs upon successful matches.
+-   **`State.sol`**: Stores the canonical state of all orders (status, quantity remaining, etc.). Provides functions for creating, updating (filling/canceling), and retrieving orders. Access is restricted to authorized contracts (Admin, CLOB, Book, Vault, Adapter).
+-   **`Vault.sol`**: Handles the financial aspects of trade settlement. In a custody-free manner, it pulls the required base/quote tokens and fees from traders (based on prior approvals) during `processSettlements` (called by `CLOB` after matching). It then transfers tokens between the buyer, seller, and the fee recipient. Also manages fee rate configuration.
+-   **`SymphonyAdapter.sol`**: Acts as a bridge for external systems (like Symphony) to interact with the CLOB via a single, synchronous swap function (`executeSwapViaCLOB`). It translates the swap request into a CLOB market order, handles token transfers to/from the caller (e.g., `MockSymphony`), interacts with the `CLOB`, and returns the result.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+Copyright (c) 2025 Prajwal Pitlehra
 
-## Acknowledgments
-
-- Inspired by DeepBook's architecture
-- Designed for Symphony as a liquidity engine
-- Optimized for the SEI blockchain
+*(Suggestion: Consider adding a standard open-source license file like `LICENSE` (e.g., MIT, Apache 2.0) to clarify usage rights.)*
