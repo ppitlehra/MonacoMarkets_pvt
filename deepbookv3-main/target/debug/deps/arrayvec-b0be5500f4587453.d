@@ -1,0 +1,11 @@
+/home/ubuntu/repos/MonacoMarkets_pvt/deepbookv3-main/target/debug/deps/libarrayvec-b0be5500f4587453.rmeta: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/arrayvec_impl.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/arrayvec.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/array_string.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/char.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/errors.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/utils.rs
+
+/home/ubuntu/repos/MonacoMarkets_pvt/deepbookv3-main/target/debug/deps/arrayvec-b0be5500f4587453.d: /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/arrayvec_impl.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/arrayvec.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/array_string.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/char.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/errors.rs /home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/utils.rs
+
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/lib.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/arrayvec_impl.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/arrayvec.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/array_string.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/char.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/errors.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/arrayvec-0.7.6/src/utils.rs:
