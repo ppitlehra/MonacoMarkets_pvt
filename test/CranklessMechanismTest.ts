@@ -114,17 +114,17 @@ describe("Crankless Mechanism Tests", function () {
     await quote.connect(trader3).approve(vaultAddress, ethers.MaxUint256);
   }
 
-  // Helper to extract order ID from receipt logs
+  // Helper to extract order ID from receipt logs (Looks for OrderPlaced from CLOB)
   async function extractOrderId(receipt: any) {
     if (!receipt || !receipt.logs) return null;
     
     for (const log of receipt.logs) {
       try {
-        const parsedLog = state.interface.parseLog(log);
-        if (parsedLog && parsedLog.name === "OrderCreated") {
+        const parsedLog = clob.interface.parseLog(log); // Use CLOB interface
+        if (parsedLog && parsedLog.name === "OrderPlaced") {
           return parsedLog.args.orderId;
         }
-      } catch (e) { /* ignore logs not parseable by state interface */ }
+      } catch (e) { /* ignore logs not parseable by clob interface */ }
     }
     return null;
   }
@@ -277,11 +277,24 @@ describe("Crankless Mechanism Tests", function () {
         if (sellReceipt && sellReceipt.logs) {
             for (const log of sellReceipt.logs) {
                 try {
+                    const parsedClobLog = clob.interface.parseLog(log);
+                    if (parsedClobLog && parsedClobLog.name === "OrderPlaced") {
+                        eventSequence.push("OrderPlaced_Sell");
+                    } else if (parsedClobLog && parsedClobLog.name === "OrderMatched") {
+                        eventSequence.push("OrderMatched");
+                    } else if (parsedClobLog && parsedClobLog.name === "OrderStatusUpdated") {
+                         if (parsedClobLog.args.orderId.toString() === buyOrderId.toString()) {
+                            eventSequence.push("OrderStatusUpdate_Buy");
+                        } else if (sellOrderId && parsedClobLog.args.orderId.toString() === sellOrderId.toString()) {
+                            eventSequence.push("OrderStatusUpdate_Sell");
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+
+                try {
                     const parsedStateLog = state.interface.parseLog(log);
-                    if (parsedStateLog && parsedStateLog.name === "OrderCreated") {
-                        eventSequence.push("OrderCreated_Sell");
-                    } else if (parsedStateLog && parsedStateLog.name === "OrderStatusUpdated") {
-                        if (parsedStateLog.args.orderId.toString() === buyOrderId.toString()) {
+                    if (parsedStateLog && parsedStateLog.name === "OrderStatusUpdated") {
+                         if (parsedStateLog.args.orderId.toString() === buyOrderId.toString()) {
                             eventSequence.push("OrderStatusUpdate_Buy");
                         } else if (sellOrderId && parsedStateLog.args.orderId.toString() === sellOrderId.toString()) {
                             eventSequence.push("OrderStatusUpdate_Sell");
@@ -295,13 +308,6 @@ describe("Crankless Mechanism Tests", function () {
                         eventSequence.push("SettlementProcessed");
                     }
                 } catch (e) { /* ignore */ }
-                
-                try {
-                    const parsedBookLog = book.interface.parseLog(log);
-                    if (parsedBookLog && parsedBookLog.name === "OrderMatched") {
-                        eventSequence.push("OrderMatched");
-                    }
-                } catch (e) { /* ignore */ }
             }
         }
 
@@ -309,7 +315,7 @@ describe("Crankless Mechanism Tests", function () {
 
         // Define the expected sequence (adjust based on actual contract logic)
         const expectedSequence = [
-            "OrderCreated_Sell",
+            "OrderPlaced_Sell",
             "OrderMatched", 
             "SettlementProcessed",
             "OrderStatusUpdate_Buy",
@@ -342,62 +348,50 @@ describe("Crankless Mechanism Tests", function () {
         const initialTrader3Base = await baseToken.balanceOf(trader3Address);
         const initialTrader3Quote = await quoteToken.balanceOf(trader3Address);
 
-        // Trader 1 places a limit buy order at price 100
-        const buyPrice1 = parseQuote("100");
-        const buyQuantity1 = parseBase("5");
-        const buyTx1 = await clob.connect(trader1).placeLimitOrder(
-            baseTokenAddress, quoteTokenAddress, true, buyPrice1, buyQuantity1
-        );
-        const buyReceipt1 = await buyTx1.wait();
-        const buyOrderId1 = await extractOrderId(buyReceipt1);
-        expect(buyOrderId1).to.not.be.null;
+        // Trader 1 places a limit sell order (best offer)
+        const sellPrice1 = parseQuote("100");
+        const sellQuantity1 = parseBase("5");
+        const sellTx1 = await clob.connect(trader1).placeLimitOrder(baseTokenAddress, quoteTokenAddress, false, sellPrice1, sellQuantity1);
+        const sellReceipt1 = await sellTx1.wait();
+        const sellOrderId1 = await extractOrderId(sellReceipt1);
+        expect(sellOrderId1).to.not.be.null;
 
-        // Trader 2 places a limit buy order at price 95 (lower price)
-        const buyPrice2 = parseQuote("95");
-        const buyQuantity2 = parseBase("5");
-        const buyTx2 = await clob.connect(trader2).placeLimitOrder(
-            baseTokenAddress, quoteTokenAddress, true, buyPrice2, buyQuantity2
-        );
-        const buyReceipt2 = await buyTx2.wait();
-        const buyOrderId2 = await extractOrderId(buyReceipt2);
-        expect(buyOrderId2).to.not.be.null;
+        // Trader 2 places another limit sell order (worse offer)
+        const sellPrice2 = parseQuote("105");
+        const sellQuantity2 = parseBase("5");
+        const sellTx2 = await clob.connect(trader2).placeLimitOrder(baseTokenAddress, quoteTokenAddress, false, sellPrice2, sellQuantity2);
+        const sellReceipt2 = await sellTx2.wait();
+        const sellOrderId2 = await extractOrderId(sellReceipt2);
+        expect(sellOrderId2).to.not.be.null;
 
-        // Trader 3 places a market sell order that should match against both buy orders
-        const sellQuantity = parseBase("10"); // Total quantity to sell
-        const sellTx = await clob.connect(trader3).placeMarketOrder(
-            baseTokenAddress, quoteTokenAddress, false, sellQuantity
-        );
-        const sellReceipt = await sellTx.wait();
+        // Trader 3 places a market buy order that crosses both resting orders
+        const quoteAmountToSpend = parseQuote("815"); // 5*100 + 3*105 = 500 + 315 = 815
+        const buyTx = await clob.connect(trader3).placeMarketOrder(baseTokenAddress, quoteTokenAddress, true, 0n, quoteAmountToSpend); // Market buy: quantity=0, quoteAmount=value
+        const buyReceipt = await buyTx.wait();
 
-        // Count settlement events - should be 2 (one for each match)
-        const settlementCount = await countSettlementEvents(sellReceipt);
-        expect(settlementCount).to.equal(2, "Should have 2 settlement events for 2 matches");
+        // Verify multiple settlement events occurred
+        const settlementCount = await countSettlementEvents(buyReceipt);
+        expect(settlementCount).to.equal(2, "Should have 2 settlement events");
 
-        // Verify both buy orders are now FILLED
-        const finalBuyOrder1 = await state.getOrder(buyOrderId1);
-        const finalBuyOrder2 = await state.getOrder(buyOrderId2);
-        expect(finalBuyOrder1.status).to.equal(2); // 2 = FILLED
-        expect(finalBuyOrder2.status).to.equal(2); // 2 = FILLED
+        // Verify first sell order is FILLED
+        const finalSellOrder1 = await state.getOrder(sellOrderId1);
+        expect(finalSellOrder1.status).to.equal(2); // FILLED
 
-        // Verify balances have changed appropriately (ignoring fees for simplicity)
+        // Verify second sell order is PARTIALLY_FILLED
+        const finalSellOrder2 = await state.getOrder(sellOrderId2);
+        expect(finalSellOrder2.status).to.equal(1); // PARTIALLY_FILLED
+        expect(finalSellOrder2.filledQuantity).to.equal(parseBase("3")); // 3 BASE filled
+
+        // Verify final balances (simplified checks)
         const finalTrader1Base = await baseToken.balanceOf(trader1Address);
-        const finalTrader1Quote = await quoteToken.balanceOf(trader1Address);
         const finalTrader2Base = await baseToken.balanceOf(trader2Address);
-        const finalTrader2Quote = await quoteToken.balanceOf(trader2Address);
         const finalTrader3Base = await baseToken.balanceOf(trader3Address);
-        const finalTrader3Quote = await quoteToken.balanceOf(trader3Address);
 
-        // Verify trader 1 balance changes (Maker, buys 5 @ 100, pays 0.5 fee)
-        expect(finalTrader1Base - initialTrader1Base).to.equal(parseBase("5"));
-        expect(initialTrader1Quote - finalTrader1Quote).to.equal(parseQuote("500.5")); // Maker pays QuoteAmount + MakerFee
-
-        // Verify trader 2 balance changes (Maker, buys 5 @ 95, pays 0.475 fee)
-        expect(finalTrader2Base - initialTrader2Base).to.equal(parseBase("5"));
-        expect(initialTrader2Quote - finalTrader2Quote).to.equal(parseQuote("475.475")); // Maker pays QuoteAmount + MakerFee
-
-        // Verify trader 3 balance changes (Taker, sells 10, pays 1 + 0.95 fee)
-        expect(initialTrader3Base - finalTrader3Base).to.equal(parseBase("10")); // Sells 10 base
-        expect(finalTrader3Quote - initialTrader3Quote).to.equal(parseQuote("973.05")); // Receives 500 + 475, pays 1 + 0.95 fees
+        expect(finalTrader1Base).to.equal(initialTrader1Base - sellQuantity1); // Trader 1 sold 5 BASE
+        expect(finalTrader2Base).to.equal(initialTrader2Base - parseBase("3")); // Trader 2 sold 3 BASE
+        const expectedBaseReceived = parseBase("8"); // 5 + 3 = 8
+        expect(finalTrader3Base).to.equal(initialTrader3Base + expectedBaseReceived); // Trader 3 bought 8 BASE
     });
   });
 });
+

@@ -42,6 +42,18 @@ interface IState {
     ) external;
 
     /**
+     * @dev Updates the status of multiple orders
+     * @param orderIds Array of order IDs
+     * @param statuses Array of new statuses
+     * @param filledQuantities Array of filled quantities
+     */
+    function updateOrderStatusBatch(
+        uint256[] calldata orderIds,
+        uint8[] calldata statuses,
+        uint256[] calldata filledQuantities
+    ) external;
+
+    /**
      * @dev Cancels an order
      * @param orderId The ID of the order
      */

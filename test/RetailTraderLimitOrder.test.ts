@@ -30,11 +30,8 @@ describe("Retail Trader Limit Order Tests", function () {
   const QUOTE_TOKEN_DECIMALS = 6;
   const INITIAL_MINT_AMOUNT = ethers.parseEther("1000000");
   
-  // Order types
-  const ORDER_TYPE_LIMIT = 0;
-  const ORDER_TYPE_MARKET = 1;
-  const ORDER_TYPE_IOC = 2;
-  const ORDER_TYPE_FOK = 3;
+  // Order types (No longer needed as we use specific functions)
+  // const ORDER_TYPE_LIMIT = 0;
   
   // Order statuses
   const ORDER_STATUS_OPEN = 0;
@@ -107,44 +104,52 @@ describe("Retail Trader Limit Order Tests", function () {
     
     // Set CLOB as the vault in book to authorize it to call matchOrders
     // This is a workaround for testing since Book only allows admin or vault to call matchOrders
-    await book.connect(owner).setVault(await clob.getAddress());
+    // await book.connect(owner).setVault(await clob.getAddress()); // Removed, CLOB calls processOrder now
+    await book.connect(owner).setCLOB(await clob.getAddress()); // Set CLOB address in Book
+    await vault.connect(owner).setCLOB(await clob.getAddress()); // Set CLOB address in Vault
 
     // Add supported trading pair
     await clob.connect(owner).addSupportedPair(await baseToken.getAddress(), await quoteToken.getAddress());
     
     // Approve tokens for trading - now that all contracts are deployed
-    await baseToken.connect(retailTrader).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
-    await quoteToken.connect(retailTrader).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
-    await baseToken.connect(otherTrader).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
-    await quoteToken.connect(otherTrader).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
-    await baseToken.connect(thirdTrader).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
-    await quoteToken.connect(thirdTrader).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
+    // Approve Vault to spend tokens, not CLOB directly
+    await baseToken.connect(retailTrader).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
+    await quoteToken.connect(retailTrader).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
+    await baseToken.connect(otherTrader).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
+    await quoteToken.connect(otherTrader).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
+    await baseToken.connect(thirdTrader).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
+    await quoteToken.connect(thirdTrader).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
   });
+
+  // Helper function to get order ID from OrderPlaced event
+  async function getOrderIdFromTx(tx: any): Promise<bigint> {
+    const receipt = await tx.wait();
+    if (!receipt) throw new Error("Transaction receipt is null");
+    const event = receipt.logs.find(
+      (log: any) => log.topics && log.topics[0] === ethers.id("OrderPlaced(uint256,address,bool,uint256,uint256)")
+    );
+    if (!event) throw new Error("OrderPlaced event not found");
+    const parsedLog = clob.interface.parseLog({ topics: event.topics as string[], data: event.data });
+    if (!parsedLog) throw new Error("Failed to parse event log");
+    return parsedLog.args[0]; // Assuming orderId is the first argument
+  }
 
   describe("Limit Order Placement", function () {
     it("Should place a limit buy order and verify it sits on the book", async function () {
-      // Define order parameters
       const buyPrice = ethers.parseUnits("100", QUOTE_TOKEN_DECIMALS);
       const buyQuantity = ethers.parseUnits("10", BASE_TOKEN_DECIMALS);
       
-      // Place a limit buy order
-      const buyTx = await clob.connect(retailTrader).placeOrder(
+      // Use placeLimitOrder instead of placeOrder
+      const buyTx = await clob.connect(retailTrader).placeLimitOrder(
         await baseToken.getAddress(),
         await quoteToken.getAddress(),
-        buyPrice,
-        buyQuantity,
         true, // isBuy
-        ORDER_TYPE_LIMIT
+        buyPrice,
+        buyQuantity
       );
       
-      // Get the order ID from the event
-      const buyReceipt = await buyTx.wait();
-      const buyOrderEvent = buyReceipt.logs.find(
-        log => log.fragment && log.fragment.name === 'OrderPlaced'
-      );
-      const buyOrderId = buyOrderEvent.args[0];
+      const buyOrderId = await getOrderIdFromTx(buyTx);
       
-      // Verify the order exists in the state contract
       const buyOrder = await state.getOrder(buyOrderId);
       expect(buyOrder.trader).to.equal(retailTraderAddress);
       expect(buyOrder.baseToken).to.equal(await baseToken.getAddress());
@@ -152,41 +157,31 @@ describe("Retail Trader Limit Order Tests", function () {
       expect(buyOrder.price).to.equal(buyPrice);
       expect(buyOrder.quantity).to.equal(buyQuantity);
       expect(buyOrder.isBuy).to.be.true;
-      expect(buyOrder.orderType).to.equal(ORDER_TYPE_LIMIT);
+      // expect(buyOrder.orderType).to.equal(ORDER_TYPE_LIMIT); // OrderType is implicit now
       expect(buyOrder.status).to.equal(ORDER_STATUS_OPEN);
       
-      // Verify the order is on the book
       const bestBidPrice = await book.getBestBidPrice();
       expect(bestBidPrice).to.equal(buyPrice);
       
-      // Verify the quantity at the price level
       const quantityAtBidPrice = await book.getQuantityAtPrice(buyPrice, true);
       expect(quantityAtBidPrice).to.equal(buyQuantity);
     });
     
     it("Should place a limit sell order and verify it sits on the book", async function () {
-      // Define order parameters
       const sellPrice = ethers.parseUnits("110", QUOTE_TOKEN_DECIMALS);
       const sellQuantity = ethers.parseUnits("5", BASE_TOKEN_DECIMALS);
       
-      // Place a limit sell order
-      const sellTx = await clob.connect(retailTrader).placeOrder(
+      // Use placeLimitOrder instead of placeOrder
+      const sellTx = await clob.connect(retailTrader).placeLimitOrder(
         await baseToken.getAddress(),
         await quoteToken.getAddress(),
-        sellPrice,
-        sellQuantity,
         false, // isBuy
-        ORDER_TYPE_LIMIT
+        sellPrice,
+        sellQuantity
       );
       
-      // Get the order ID from the event
-      const sellReceipt = await sellTx.wait();
-      const sellOrderEvent = sellReceipt.logs.find(
-        log => log.fragment && log.fragment.name === 'OrderPlaced'
-      );
-      const sellOrderId = sellOrderEvent.args[0];
+      const sellOrderId = await getOrderIdFromTx(sellTx);
       
-      // Verify the order exists in the state contract
       const sellOrder = await state.getOrder(sellOrderId);
       expect(sellOrder.trader).to.equal(retailTraderAddress);
       expect(sellOrder.baseToken).to.equal(await baseToken.getAddress());
@@ -194,14 +189,12 @@ describe("Retail Trader Limit Order Tests", function () {
       expect(sellOrder.price).to.equal(sellPrice);
       expect(sellOrder.quantity).to.equal(sellQuantity);
       expect(sellOrder.isBuy).to.be.false;
-      expect(sellOrder.orderType).to.equal(ORDER_TYPE_LIMIT);
+      // expect(sellOrder.orderType).to.equal(ORDER_TYPE_LIMIT);
       expect(sellOrder.status).to.equal(ORDER_STATUS_OPEN);
       
-      // Verify the order is on the book
       const bestAskPrice = await book.getBestAskPrice();
       expect(bestAskPrice).to.equal(sellPrice);
       
-      // Verify the quantity at the price level
       const quantityAtAskPrice = await book.getQuantityAtPrice(sellPrice, false);
       expect(quantityAtAskPrice).to.equal(sellQuantity);
     });
@@ -209,36 +202,31 @@ describe("Retail Trader Limit Order Tests", function () {
   
   describe("Multiple Price Levels", function() {
     it("Should maintain correct order book structure with multiple buy orders at different prices", async function() {
-      // Place orders at different price levels
       const prices = [
         ethers.parseUnits("98", QUOTE_TOKEN_DECIMALS),
         ethers.parseUnits("99", QUOTE_TOKEN_DECIMALS),
         ethers.parseUnits("100", QUOTE_TOKEN_DECIMALS)
       ];
-      
       const quantities = [
         ethers.parseUnits("5", BASE_TOKEN_DECIMALS),
         ethers.parseUnits("10", BASE_TOKEN_DECIMALS),
         ethers.parseUnits("15", BASE_TOKEN_DECIMALS)
       ];
       
-      // Place buy orders at different price levels
+      // Use placeLimitOrder instead of placeOrder
       for (let i = 0; i < prices.length; i++) {
-        await clob.connect(retailTrader).placeOrder(
+        await clob.connect(retailTrader).placeLimitOrder(
           await baseToken.getAddress(),
           await quoteToken.getAddress(),
-          prices[i],
-          quantities[i],
           true, // isBuy
-          ORDER_TYPE_LIMIT
+          prices[i],
+          quantities[i]
         );
       }
       
-      // Verify best bid price (should be the highest price)
       const bestBidPrice = await book.getBestBidPrice();
       expect(bestBidPrice).to.equal(prices[2]); // 100 is the highest price
       
-      // Verify quantities at each price level
       for (let i = 0; i < prices.length; i++) {
         const quantityAtPrice = await book.getQuantityAtPrice(prices[i], true);
         expect(quantityAtPrice).to.equal(quantities[i]);
@@ -246,36 +234,31 @@ describe("Retail Trader Limit Order Tests", function () {
     });
 
     it("Should maintain correct order book structure with multiple sell orders at different prices", async function() {
-      // Place orders at different price levels
       const prices = [
         ethers.parseUnits("110", QUOTE_TOKEN_DECIMALS),
         ethers.parseUnits("105", QUOTE_TOKEN_DECIMALS),
         ethers.parseUnits("103", QUOTE_TOKEN_DECIMALS)
       ];
-      
       const quantities = [
         ethers.parseUnits("5", BASE_TOKEN_DECIMALS),
         ethers.parseUnits("10", BASE_TOKEN_DECIMALS),
         ethers.parseUnits("15", BASE_TOKEN_DECIMALS)
       ];
       
-      // Place sell orders at different price levels
+      // Use placeLimitOrder instead of placeOrder
       for (let i = 0; i < prices.length; i++) {
-        await clob.connect(retailTrader).placeOrder(
+        await clob.connect(retailTrader).placeLimitOrder(
           await baseToken.getAddress(),
           await quoteToken.getAddress(),
-          prices[i],
-          quantities[i],
           false, // isBuy
-          ORDER_TYPE_LIMIT
+          prices[i],
+          quantities[i]
         );
       }
       
-      // Verify best ask price (should be the lowest price)
       const bestAskPrice = await book.getBestAskPrice();
       expect(bestAskPrice).to.equal(prices[2]); // 103 is the lowest price
       
-      // Verify quantities at each price level
       for (let i = 0; i < prices.length; i++) {
         const quantityAtPrice = await book.getQuantityAtPrice(prices[i], false);
         expect(quantityAtPrice).to.equal(quantities[i]);
@@ -285,50 +268,42 @@ describe("Retail Trader Limit Order Tests", function () {
 
   describe("Multiple Orders at Same Price Level", function() {
     it("Should aggregate quantities correctly for multiple orders at the same price level", async function() {
-      // Define order parameters
       const buyPrice = ethers.parseUnits("100", QUOTE_TOKEN_DECIMALS);
       const buyQuantity1 = ethers.parseUnits("10", BASE_TOKEN_DECIMALS);
       const buyQuantity2 = ethers.parseUnits("15", BASE_TOKEN_DECIMALS);
       const buyQuantity3 = ethers.parseUnits("5", BASE_TOKEN_DECIMALS);
       
-      // Calculate total quantity (using BigInt for safe addition)
       const totalQuantity = BigInt(buyQuantity1) + BigInt(buyQuantity2) + BigInt(buyQuantity3);
       
-      // Place multiple buy orders at the same price level from different traders
-      await clob.connect(retailTrader).placeOrder(
+      // Use placeLimitOrder instead of placeOrder
+      await clob.connect(retailTrader).placeLimitOrder(
         await baseToken.getAddress(),
         await quoteToken.getAddress(),
-        buyPrice,
-        buyQuantity1,
         true, // isBuy
-        ORDER_TYPE_LIMIT
+        buyPrice,
+        buyQuantity1
       );
-      
-      await clob.connect(otherTrader).placeOrder(
+      await clob.connect(otherTrader).placeLimitOrder(
         await baseToken.getAddress(),
         await quoteToken.getAddress(),
-        buyPrice,
-        buyQuantity2,
         true, // isBuy
-        ORDER_TYPE_LIMIT
+        buyPrice,
+        buyQuantity2
       );
-      
-      await clob.connect(thirdTrader).placeOrder(
+      await clob.connect(thirdTrader).placeLimitOrder(
         await baseToken.getAddress(),
         await quoteToken.getAddress(),
-        buyPrice,
-        buyQuantity3,
         true, // isBuy
-        ORDER_TYPE_LIMIT
+        buyPrice,
+        buyQuantity3
       );
       
-      // Verify the best bid price
       const bestBidPrice = await book.getBestBidPrice();
       expect(bestBidPrice).to.equal(buyPrice);
       
-      // Verify the total quantity at the price level
       const quantityAtBidPrice = await book.getQuantityAtPrice(buyPrice, true);
       expect(BigInt(quantityAtBidPrice)).to.equal(totalQuantity);
     });
   });
 });
+

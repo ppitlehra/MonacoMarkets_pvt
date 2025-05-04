@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
@@ -234,12 +233,18 @@ contract State is IState {
             return;
         }
         
-        // FILLED and CANCELED are terminal states
-        require(
-            currentStatus != IOrderInfo.OrderStatus.FILLED && 
-            currentStatus != IOrderInfo.OrderStatus.CANCELED,
-            "State: cannot transition from terminal state"
-        );
+        // FILLED and CANCELED are terminal states, but allow redundant updates to same terminal state
+        if (currentStatus == IOrderInfo.OrderStatus.FILLED) {
+            require(newStatus == IOrderInfo.OrderStatus.FILLED, "State: cannot transition from FILLED");
+            return;
+        }
+        if (currentStatus == IOrderInfo.OrderStatus.CANCELED) {
+            require(newStatus == IOrderInfo.OrderStatus.CANCELED, "State: cannot transition from CANCELED");
+            return;
+        }
+
+        // Should not happen if logic above is complete, but prevents unknown transitions
+        revert("State: Invalid or unhandled status transition");
     }
 
     /**

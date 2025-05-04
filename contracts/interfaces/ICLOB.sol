@@ -8,16 +8,9 @@ import "./IOrderInfo.sol";
  * @dev Interface for the main CLOB contract
  */
 interface ICLOB {
-    /**
-     * @dev Places an order
-     * @param baseToken The address of the base token
-     * @param quoteToken The address of the quote token
-     * @param price The price in quote token
-     * @param quantity The quantity in base token
-     * @param isBuy True if buy order, false if sell order
-     * @param orderType The type of order (LIMIT, MARKET, IOC, FOK)
-     * @return The ID of the created order
-     */
+    // Note: Removed generic placeOrder as CLOB implements specific types
+    // and SymphonyAdapter calls placeMarketOrder directly.
+    /*
     function placeOrder(
         address baseToken,
         address quoteToken,
@@ -26,6 +19,7 @@ interface ICLOB {
         bool isBuy,
         uint8 orderType
     ) external returns (uint256);
+    */
 
     /**
      * @dev Cancels an order
@@ -95,4 +89,23 @@ interface ICLOB {
      * @return The order
      */
     function getOrder(uint256 orderId) external view returns (IOrderInfo.Order memory);
+
+    /**
+     * @dev Places a market order (specifically for SymphonyAdapter)
+     * @param baseToken The address of the base token
+     * @param quoteToken The address of the quote token
+     * @param isBuy True if buy order, false if sell order
+     * @param quantity The quantity in base token (used for sell orders)
+     * @param quoteAmount The amount in quote token (used for buy orders)
+     * @return filledQuantity The total quantity of base token filled
+     * @return filledQuoteAmount The total amount of quote token filled
+     */
+    function placeMarketOrder(
+        address baseToken,
+        address quoteToken,
+        bool isBuy,
+        uint256 quantity,
+        uint256 quoteAmount
+    ) external returns (uint256 filledQuantity, uint256 filledQuoteAmount);
 }
+

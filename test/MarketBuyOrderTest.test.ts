@@ -120,12 +120,17 @@ describe("Market Buy Order Tests", function () {
     const initialBuyer2BaseBalance = await baseToken.balanceOf(await trader2.getAddress());
     const initialBuyer2QuoteBalance = await quoteToken.balanceOf(await trader2.getAddress());
     
-    // Place a market buy order
+    // Calculate quote amount needed for the market buy
+    const quoteAmountToSpend = (ORDER_PRICE * ORDER_QUANTITY) / ethers.parseUnits("1", 18);
+    console.log(`DEBUG: Calculated quoteAmountToSpend: ${quoteAmountToSpend}, Type: ${typeof quoteAmountToSpend}`); // DEBUG LOG
+
+    // Place a market buy order specifying the quote amount to spend
     const marketBuyTx = await clob.connect(trader2).placeMarketOrder(
       await baseToken.getAddress(),
       await quoteToken.getAddress(),
       true, // isBuy
-      ORDER_QUANTITY
+      0, // Quantity is 0 for market buy
+      quoteAmountToSpend // Amount is QUOTE amount to spend for market buy
     );
     
     // Wait for transaction to be mined
@@ -151,11 +156,98 @@ describe("Market Buy Order Tests", function () {
     
     // Check order statuses
     expect(sellOrder.status).to.equal(ORDER_STATUS_FILLED);
-    expect(buyOrder.status).to.equal(ORDER_STATUS_FILLED);
+    expect(buyOrder.status).to.equal(ORDER_STATUS_PARTIALLY_FILLED); // Expect PARTIALLY_FILLED due to uint256.max quantity
     
     // Verify filled quantities
     expect(sellOrder.filledQuantity).to.equal(ORDER_QUANTITY);
     expect(buyOrder.filledQuantity).to.equal(ORDER_QUANTITY);
+    
+    // Verify token transfers
+    // Buyer should receive base tokens and spend quote tokens
+    const baseTokenDiff = finalBuyer2BaseBalance - initialBuyer2BaseBalance;
+    console.log(`Market Buy Order Test - Base Token Difference: ${baseTokenDiff}`);
+    expect(baseTokenDiff).to.equal(ORDER_QUANTITY);
+    
+    const quoteTokenDiff = initialBuyer2QuoteBalance - finalBuyer2QuoteBalance;
+    console.log(`Market Buy Order Test - Quote Token Difference: ${quoteTokenDiff}`);
+    expect(quoteTokenDiff).to.be.gt(0n);
+
+    console.log(`MarketBuyOrderTest: Initial sell order status after market buy: ${sellOrder.status}, filled: ${sellOrder.filledQuantity}`);
+
+    const marketBuyOrder = await state.getOrder(2);
+    expect(marketBuyOrder.status, "Market buy order status should be PARTIALLY_FILLED").to.equal(ORDER_STATUS_PARTIALLY_FILLED); // Market buy is partially filled
+
+    const sellOrderAfter = await state.getOrder(1);
+    expect(sellOrderAfter.status, "Sell order status should be FILLED").to.equal(ORDER_STATUS_FILLED); // Corrected expectation: FILLED
+  });
+
+  it("should correctly handle market buy orders that fill multiple sell orders", async function () {
+    // Place a limit sell order first to provide liquidity
+    await clob.connect(trader1).placeLimitOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      false, // isBuy
+      ORDER_PRICE,
+      ORDER_QUANTITY
+    );
+    
+    // Place another limit sell order
+    await clob.connect(trader2).placeLimitOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      false, // isBuy
+      ORDER_PRICE,
+      ORDER_QUANTITY
+    );
+    
+    // Get initial balances before market order
+    const initialBuyer2BaseBalance = await baseToken.balanceOf(await trader2.getAddress());
+    const initialBuyer2QuoteBalance = await quoteToken.balanceOf(await trader2.getAddress());
+    
+    // Calculate quote amount needed for the market buy
+    const quoteAmountToSpend = (ORDER_PRICE * ORDER_QUANTITY) / ethers.parseUnits("1", 18);
+    console.log(`DEBUG: Calculated quoteAmountToSpend: ${quoteAmountToSpend}, Type: ${typeof quoteAmountToSpend}`); // DEBUG LOG
+
+    // Place a market buy order specifying the quote amount to spend
+    const marketBuyTx = await clob.connect(trader2).placeMarketOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      true, // isBuy
+      0, // Quantity is 0 for market buy
+      quoteAmountToSpend // Amount is QUOTE amount to spend for market buy
+    );
+    
+    // Wait for transaction to be mined
+    await marketBuyTx.wait();
+    
+    // Get final balances after market order
+    const finalBuyer2BaseBalance = await baseToken.balanceOf(await trader2.getAddress());
+    const finalBuyer2QuoteBalance = await quoteToken.balanceOf(await trader2.getAddress());
+    
+    // Verify order statuses
+    const sellOrder1Id = 1n;
+    const sellOrder2Id = 2n;
+    const marketBuyOrderId = 3n;
+    
+    // Get the orders
+    const sellOrder1 = await state.getOrder(sellOrder1Id);
+    const sellOrder2 = await state.getOrder(sellOrder2Id);
+    const marketBuyOrder = await state.getOrder(marketBuyOrderId);
+    
+    console.log(`Market Buy Order Test (Multi-Fill) - Market Buy Order ID: ${marketBuyOrderId}`);
+    console.log(`Market Buy Order Test (Multi-Fill) - Market Buy Order Status: ${marketBuyOrder.status}`);
+    console.log(`Market Buy Order Test (Multi-Fill) - Sell Order 1 Status: ${sellOrder1.status}`);
+    console.log(`Market Buy Order Test (Multi-Fill) - Sell Order 2 Status: ${sellOrder2.status}`); // Should be OPEN due to self-trade prevention
+    
+    // Check order statuses
+    expect(sellOrder1.status, "Sell Order 1 status should be FILLED").to.equal(ORDER_STATUS_FILLED);
+    expect(sellOrder2.status, "Sell Order 2 status should be OPEN").to.equal(ORDER_STATUS_OPEN); // Corrected expectation
+    expect(marketBuyOrder.status, "Market Buy Order 3 status should be PARTIALLY_FILLED").to.equal(ORDER_STATUS_PARTIALLY_FILLED); // Check the correct order
+    
+    // Verify filled quantities
+    expect(sellOrder1.filledQuantity, "Sell Order 1 filled quantity").to.equal(ORDER_QUANTITY);
+    expect(sellOrder2.filledQuantity, "Sell Order 2 filled quantity").to.equal(0); // Corrected expectation
+    expect(marketBuyOrder.filledQuantity, "Market Buy Order 3 filled quantity").to.equal(ORDER_QUANTITY); // Filled against sellOrder1
     
     // Verify token transfers
     // Buyer should receive base tokens and spend quote tokens

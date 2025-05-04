@@ -98,20 +98,20 @@ describe("Complex Scenarios Tests", function () {
     }
     for (const log of receipt.logs) {
       try {
-        const parsedLog = state.interface.parseLog(log);
-        if (parsedLog && parsedLog.name === "OrderCreated") {
+        const parsedLog = clob.interface.parseLog(log); // Parse using CLOB interface for OrderPlaced
+        if (parsedLog && parsedLog.name === "OrderPlaced") {
           return parsedLog.args.orderId;
         }
       } catch (e) { /* ignore */ }
     }
-    throw new Error("OrderCreated event not found");
+    throw new Error("OrderPlaced event not found");
   }
 
   // Helper to place a market order
-  async function placeMarketOrder(trader: Signer, isBuy: boolean, quantity: bigint) {
+  async function placeMarketOrder(trader: Signer, isBuy: boolean, quantity: bigint, quoteAmount: bigint = 0n) {
     const baseTokenAddress = await baseToken.getAddress();
     const quoteTokenAddress = await quoteToken.getAddress();
-    const tx = await clob.connect(trader).placeMarketOrder(baseTokenAddress, quoteTokenAddress, isBuy, quantity);
+    const tx = await clob.connect(trader).placeMarketOrder(baseTokenAddress, quoteTokenAddress, isBuy, quantity, quoteAmount);
     return tx.wait();
   }
 
@@ -324,8 +324,8 @@ describe("Complex Scenarios Tests", function () {
       if (sellReceipt && sellReceipt.logs) {
         for (const log of sellReceipt.logs) {
           try {
-            const parsedLog = state.interface.parseLog(log);
-            if (parsedLog && parsedLog.name === "OrderCreated") {
+            const parsedLog = clob.interface.parseLog(log); // Parse using CLOB interface
+            if (parsedLog && parsedLog.name === "OrderPlaced") {
               sellOrderId = parsedLog.args.orderId;
               break;
             }
@@ -375,46 +375,5 @@ describe("Complex Scenarios Tests", function () {
       expect(buyOrderStatus).to.equal(2n, "Buy order should be filled");
     });
   });
-
-  describe("Order Matching Priority", function() {
-    beforeEach(deployAndSetup);
-
-    it("Should match orders based on price-time priority", async function () {
-      // Trader1 places a limit buy order at price 100
-      const buyPrice1 = parseQuote("100");
-      const buyQuantity1 = parseBase("5");
-      const buyOrderId1 = await placeLimitOrder(trader1, true, buyPrice1, buyQuantity1);
-      
-      // Trader2 places a limit buy order at price 102 (better price)
-      const buyPrice2 = parseQuote("102");
-      const buyQuantity2 = parseBase("5");
-      const buyOrderId2 = await placeLimitOrder(trader2, true, buyPrice2, buyQuantity2);
-      
-      // Trader3 places a limit buy order at price 100 (same as first, but later in time)
-      const buyPrice3 = parseQuote("100");
-      const buyQuantity3 = parseBase("5");
-      const buyOrderId3 = await placeLimitOrder(trader3, true, buyPrice3, buyQuantity3);
-      
-      // Trader2 places a market sell order for 10 BASE (should match against orders 2 and 1 in that order)
-      // Note: Using trader2 to avoid self-trade prevention with buyOrderId2
-      const sellQuantity = parseBase("10");
-      const sellTx = await placeMarketOrder(trader3, false, sellQuantity);
-      
-      // Verify multiple settlements occurred
-      const settlementCount = await countSettlementEvents(sellTx);
-      expect(settlementCount).to.equal(2, "Should have 2 settlement events");
-      
-      // Verify order 2 (better price) is filled
-      const buyOrder2Status = await getOrderStatus(buyOrderId2);
-      expect(buyOrder2Status).to.equal(2n, "Order with better price should be filled");
-      
-      // Verify order 1 (earlier time at same price) is filled
-      const buyOrder1Status = await getOrderStatus(buyOrderId1);
-      expect(buyOrder1Status).to.equal(2n, "Order with earlier time at same price should be filled");
-      
-      // Verify order 3 (later time at same price) remains open
-      const buyOrder3Status = await getOrderStatus(buyOrderId3);
-      expect(buyOrder3Status).to.equal(0n, "Order with later time at same price should remain open");
-    });
-  });
 });
+

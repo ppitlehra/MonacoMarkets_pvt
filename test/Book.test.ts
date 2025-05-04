@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { Book, State, MockToken, Vault } from "../typechain-types";
+import { Book, CLOB, State, Vault, MockToken } from "../typechain-types";
 
 describe("Book Contract Tests", function () {
   let owner: SignerWithAddress;
@@ -66,8 +66,8 @@ describe("Book Contract Tests", function () {
     await baseToken.connect(trader2).approve(await vault.getAddress(), ethers.MaxUint256);
     await quoteToken.connect(trader2).approve(await vault.getAddress(), ethers.MaxUint256);
     
-    // Create test orders
-    await state.connect(owner).createOrder(
+    // Create test orders in State (simulate external creation)
+    const buyTx = await state.connect(owner).createOrder(
       trader1Address,
       await baseToken.getAddress(),
       await quoteToken.getAddress(),
@@ -76,8 +76,11 @@ describe("Book Contract Tests", function () {
       true,
       0
     );
+    const buyReceipt = await buyTx.wait();
+    const buyEvent = buyReceipt.logs.find(log => log.fragment && log.fragment.name === 'OrderCreated');
+    buyOrderId = buyEvent.args[0];
     
-    await state.connect(owner).createOrder(
+    const sellTx = await state.connect(owner).createOrder(
       trader2Address,
       await baseToken.getAddress(),
       await quoteToken.getAddress(),
@@ -86,9 +89,9 @@ describe("Book Contract Tests", function () {
       false,
       0
     );
-    
-    buyOrderId = 1n;
-    sellOrderId = 2n;
+    const sellReceipt = await sellTx.wait();
+    const sellEvent = sellReceipt.logs.find(log => log.fragment && log.fragment.name === 'OrderCreated');
+    sellOrderId = sellEvent.args[0];
   });
   
   describe("Order Management", function () {
@@ -96,33 +99,33 @@ describe("Book Contract Tests", function () {
       await book.connect(owner).addOrder(buyOrderId);
       await book.connect(owner).addOrder(sellOrderId);
       
-      // Verify through events or state checks
+      // Verify through state checks
       const buyOrder = await state.getOrder(buyOrderId);
       const sellOrder = await state.getOrder(sellOrderId);
       expect(buyOrder.status).to.equal(0n); // OPEN
       expect(sellOrder.status).to.equal(0n); // OPEN
+      // Additional checks could involve internal book state if accessible
     });
 
     it("Should remove orders from the book", async function () {
       await book.connect(owner).addOrder(buyOrderId);
       await book.connect(owner).addOrder(sellOrderId);
       
-      // Manually update the order status to simulate removal
+      // Manually update the order status to simulate removal condition
       await state.connect(owner).updateOrderStatus(buyOrderId, 3n, 0n); // Set to CANCELED
       
       await book.connect(owner).removeOrder(buyOrderId);
       
-      // Verify through events or state checks
+      // Verify through state checks
       const buyOrder = await state.getOrder(buyOrderId);
-      expect(buyOrder.status).to.equal(3n); // CANCELED (not OPEN)
+      expect(buyOrder.status).to.equal(3n); // CANCELED
+      // Additional checks could involve internal book state if accessible
     });
   });
 
-  describe("Order Matching", function () {
-    it("Should match compatible orders", async function () {
+  describe("Order Matching Simulation", function () {
+    it("Should allow simulating matches by updating state", async function () {
       // Create new orders for this test specifically
-      
-      // Create buy order and get its ID from the event
       const buyTx = await state.connect(owner).createOrder(
         trader1Address,
         await baseToken.getAddress(),
@@ -136,7 +139,6 @@ describe("Book Contract Tests", function () {
       const buyEvent = buyReceipt.logs.find(log => log.fragment && log.fragment.name === 'OrderCreated');
       const newBuyOrderId = buyEvent.args[0];
       
-      // Create sell order and get its ID from the event
       const sellTx = await state.connect(owner).createOrder(
         trader2Address,
         await baseToken.getAddress(),
@@ -150,21 +152,9 @@ describe("Book Contract Tests", function () {
       const sellEvent = sellReceipt.logs.find(log => log.fragment && log.fragment.name === 'OrderCreated');
       const newSellOrderId = sellEvent.args[0];
       
-      // Verify orders exist before adding to book (using fetched IDs)
-      const buyOrderBefore = await state.getOrder(newBuyOrderId);
-      const sellOrderBefore = await state.getOrder(newSellOrderId);
-      expect(buyOrderBefore.trader).to.equal(trader1Address);
-      expect(sellOrderBefore.trader).to.equal(trader2Address);
-      
-      // Now add orders to book
+      // Add orders to book
       await book.connect(owner).addOrder(newBuyOrderId);
       await book.connect(owner).addOrder(newSellOrderId);
-      
-      // Verify orders are still accessible after adding to book
-      const buyOrderAfterAdd = await state.getOrder(newBuyOrderId);
-      const sellOrderAfterAdd = await state.getOrder(newSellOrderId);
-      expect(buyOrderAfterAdd.status).to.equal(0n); // Should still be OPEN
-      expect(sellOrderAfterAdd.status).to.equal(0n); // Should still be OPEN
       
       // Manually update order statuses to simulate matching
       await state.connect(owner).updateOrderStatus(newBuyOrderId, 2n, ethers.parseUnits("10", Number(BASE_TOKEN_DECIMALS))); // FILLED
@@ -177,10 +167,8 @@ describe("Book Contract Tests", function () {
       expect(newSellOrder.status).to.equal(2n); // FILLED
     });
     
-    it("Should handle partial matches", async function () {
+    it("Should allow simulating partial matches by updating state", async function () {
       // Create new orders for this test specifically
-      
-      // Create buy order and get its ID from the event
       const buyTx = await state.connect(owner).createOrder(
         trader1Address,
         await baseToken.getAddress(),
@@ -194,7 +182,6 @@ describe("Book Contract Tests", function () {
       const buyEvent = buyReceipt.logs.find(log => log.fragment && log.fragment.name === 'OrderCreated');
       const newBuyOrderId = buyEvent.args[0];
       
-      // Create sell order and get its ID from the event
       const sellTx = await state.connect(owner).createOrder(
         trader2Address,
         await baseToken.getAddress(),
@@ -208,33 +195,25 @@ describe("Book Contract Tests", function () {
       const sellEvent = sellReceipt.logs.find(log => log.fragment && log.fragment.name === 'OrderCreated');
       const newSellOrderId = sellEvent.args[0];
       
-      // Verify orders exist before adding to book (using fetched IDs)
-      const buyOrderBefore = await state.getOrder(newBuyOrderId);
-      const sellOrderBefore = await state.getOrder(newSellOrderId);
-      expect(buyOrderBefore.trader).to.equal(trader1Address);
-      expect(sellOrderBefore.trader).to.equal(trader2Address);
-      
-      // Now add orders to book
+      // Add orders to book
       await book.connect(owner).addOrder(newBuyOrderId);
       await book.connect(owner).addOrder(newSellOrderId);
-      
-      // Verify orders are still accessible after adding to book
-      const buyOrderAfterAdd = await state.getOrder(newBuyOrderId);
-      const sellOrderAfterAdd = await state.getOrder(newSellOrderId);
-      expect(buyOrderAfterAdd.status).to.equal(0n); // Should still be OPEN
-      expect(sellOrderAfterAdd.status).to.equal(0n); // Should still be OPEN
       
       // Manually update order statuses to simulate partial matching
       await state.connect(owner).updateOrderStatus(newBuyOrderId, 1n, ethers.parseUnits("10", Number(BASE_TOKEN_DECIMALS))); // PARTIALLY_FILLED
       await state.connect(owner).updateOrderStatus(newSellOrderId, 2n, ethers.parseUnits("10", Number(BASE_TOKEN_DECIMALS))); // FILLED
       
-      // Verify through events or state checks
+      // Verify through state checks
       const newBuyOrder = await state.getOrder(newBuyOrderId);
       const newSellOrder = await state.getOrder(newSellOrderId);
       expect(newBuyOrder.status).to.equal(1n); // PARTIALLY_FILLED
       expect(newSellOrder.status).to.equal(2n); // FILLED
+      expect(newBuyOrder.filledQuantity).to.equal(ethers.parseUnits("10", Number(BASE_TOKEN_DECIMALS)));
+      expect(newSellOrder.filledQuantity).to.equal(ethers.parseUnits("10", Number(BASE_TOKEN_DECIMALS)));
     });
   });
   
-  // Removed the Price Level Management test since getBestBid/getBestAsk functions don't exist
+  // Note: Tests for getBestBid/getBestAsk/getSettlementData are removed as these functions are internal or complex to test directly.
+  // These functions are implicitly tested via the CLOB contract tests.
 });
+

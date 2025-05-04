@@ -125,47 +125,42 @@ describe("Vault Fee Calculation Tests", function () {
     });
   });
 
-  // Helper function to place orders and get IDs
+  // Helper function to get order ID from OrderPlaced event
+  async function getOrderIdFromTx(tx: any): Promise<bigint> {
+    const receipt = await tx.wait();
+    if (!receipt) throw new Error("Transaction receipt is null");
+    const event = receipt.logs.find(
+      (log: any) => log.topics && log.topics[0] === ethers.id("OrderPlaced(uint256,address,bool,uint256,uint256)")
+    );
+    if (!event) throw new Error("OrderPlaced event not found");
+    const parsedLog = clob.interface.parseLog({ topics: event.topics as string[], data: event.data });
+    if (!parsedLog) throw new Error("Failed to parse event log");
+    return parsedLog.args[0]; // Assuming orderId is the first argument
+  }
+
+  // Helper function to place orders and get IDs - UPDATED to use placeLimitOrder
   async function placeOrders(makerSigner: Signer, takerSigner: Signer, makerPrice: bigint, makerQuantity: bigint, takerQuantity: bigint, isTakerBuy: boolean): Promise<{ makerOrderId: bigint, takerOrderId: bigint, settlementQuantity: bigint, settlementPrice: bigint }> {
     const makerIsBuy = !isTakerBuy;
 
-    // Place Maker Order
-    const placeMakerTx = await clob.connect(makerSigner).placeOrder(
+    // Place Maker Order (Limit)
+    const placeMakerTx = await clob.connect(makerSigner).placeLimitOrder(
       await baseToken.getAddress(),
       await quoteToken.getAddress(),
-      makerPrice,
-      makerQuantity,
       makerIsBuy,
-      0 // orderType = LIMIT
+      makerPrice,
+      makerQuantity
     );
-    const makerReceipt = await placeMakerTx.wait();
-    if (!makerReceipt) {
-      throw new Error("Maker transaction receipt is null");
-    }
-    const makerEvent = makerReceipt.logs.find((log: any) => log.fragment?.name === 'OrderPlaced');
-    if (!makerEvent) {
-      throw new Error("OrderPlaced event not found in maker transaction logs");
-    }
-    const makerOrderId = (makerEvent as any).args?.[0];
+    const makerOrderId = await getOrderIdFromTx(placeMakerTx);
 
-    // Place Taker Order
-    const placeTakerTx = await clob.connect(takerSigner).placeOrder(
+    // Place Taker Order (Limit, matching maker's price)
+    const placeTakerTx = await clob.connect(takerSigner).placeLimitOrder(
       await baseToken.getAddress(),
       await quoteToken.getAddress(),
-      makerPrice, // Taker matches maker's price
-      takerQuantity,
       isTakerBuy,
-      0 // orderType = LIMIT
+      makerPrice, // Taker matches maker's price
+      takerQuantity
     );
-    const takerReceipt = await placeTakerTx.wait();
-    if (!takerReceipt) {
-      throw new Error("Taker transaction receipt is null");
-    }
-    const takerEvent = takerReceipt.logs.find((log: any) => log.fragment?.name === 'OrderPlaced');
-    if (!takerEvent) {
-      throw new Error("OrderPlaced event not found in taker transaction logs");
-    }
-    const takerOrderId = (takerEvent as any).args?.[0];
+    const takerOrderId = await getOrderIdFromTx(placeTakerTx);
 
     // Determine settlement details
     const settlementQuantity = makerQuantity < takerQuantity ? makerQuantity : takerQuantity;

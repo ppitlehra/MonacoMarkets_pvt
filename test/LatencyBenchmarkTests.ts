@@ -153,15 +153,25 @@ describe("Latency Benchmark Tests", function () {
     await clob.connect(trader2).placeLimitOrder(await baseToken.getAddress(), await quoteToken.getAddress(), false, sellPrice, sellQuantity); // Fixed
 
     // Place matching market buy order
-    const marketBuyQuantity = parseBase(5);
+    const marketBuyBaseQuantity = parseBase(5);
+    // Calculate required quote amount based on sell price
+    const quoteAmountToSpend = sellPrice * marketBuyBaseQuantity / parseUnits("1", baseDecimals); // 100 * 5 = 500 quote
 
     console.time("Place Market Order (Simple Match)");
-    const tx = await clob.connect(trader1).placeMarketOrder(await baseToken.getAddress(), await quoteToken.getAddress(), true, marketBuyQuantity); // Fixed
+    const tx = await clob.connect(trader1).placeMarketOrder(
+      await baseToken.getAddress(), 
+      await quoteToken.getAddress(), 
+      true, // isBuy
+      0, // quantity (base) is 0 for market buy
+      quoteAmountToSpend // quoteAmount to spend
+    );
     await tx.wait();
     console.timeEnd("Place Market Order (Simple Match)");
 
     const marketOrder = await state.getOrder(2);
-    expect(marketOrder.status).to.equal(ORDER_STATUS_FILLED);
+    expect(marketOrder.status, "Market buy order (ID 2) status should be PARTIALLY_FILLED").to.equal(ORDER_STATUS_PARTIALLY_FILLED);
+    const sellOrder = await state.getOrder(1);
+    expect(sellOrder.status, "Sell order (ID 1) status should be FILLED").to.equal(ORDER_STATUS_FILLED);
   });
 
   it("Latency: Cancel Open Order", async function () {

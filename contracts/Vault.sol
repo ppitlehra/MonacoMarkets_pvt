@@ -101,22 +101,39 @@ contract Vault is IVault, Ownable {
 
     // Implementing processSettlement from IVault with onlyBook modifier
     function processSettlement(IOrderInfo.Settlement memory settlement) public override onlyBook {
-         _processSingleSettlement(settlement);
+         _processSingleSettlement(settlement); // Reverted to calling single process
     }
 
     // Implementing processSettlements from IVault with onlyBook modifier
+    // Reverted back to original looping implementation
     function processSettlements(IOrderInfo.Settlement[] memory settlements) public override onlyBook {
         uint256 numSettlements = settlements.length;
+        console.log("Vault.processSettlements: Received batch of size %s", numSettlements);
+        // REVERTED: Cannot declare local mapping
+        // mapping(uint256 => mapping(uint256 => bool)) processedInThisTx;
+
         for (uint256 i = 0; i < numSettlements; ++i) {
-            _processSingleSettlement(settlements[i]);
+            console.log("Vault.processSettlements Loop: Processing index %s (Taker: %s, Maker: %s)", i, settlements[i].takerOrderId, settlements[i].makerOrderId);
+            _processSingleSettlement(settlements[i]); // REVERTED: Call original
         }
+        console.log("Vault.processSettlements: Finished batch.");
     }
 
-    // Internal processing logic
-    function _processSingleSettlement(IOrderInfo.Settlement memory settlement) internal {
-        // --- Check if already processed ---
-        require(!processedSettlements[settlement.takerOrderId][settlement.makerOrderId], "Vault: settlement already processed");
+    // Internal processing logic (Original - called by the loop)
+    // REVERTED: Remove temporary mapping parameter
+    function _processSingleSettlement(
+        IOrderInfo.Settlement memory settlement
+        // REVERTED: mapping(uint256 => mapping(uint256 => bool)) storage processedInThisTx 
+    ) internal {
+         // REVERTED: Remove temporary check
+         // if (processedInThisTx[settlement.takerOrderId][settlement.makerOrderId]) { ... }
+         // processedInThisTx[settlement.takerOrderId][settlement.makerOrderId] = true;
 
+        console.log("Vault._processSingle: Checking processed flag (STORAGE) for Taker %s, Maker %s", settlement.takerOrderId, settlement.makerOrderId);
+        // --- Check if already processed (STORAGE) --- //
+        require(!processedSettlements[settlement.takerOrderId][settlement.makerOrderId], "Vault: settlement already processed"); // Original check
+
+        console.log("Vault._processSingle: Passed check. Fetching orders...");
         IOrderInfo.Order memory takerOrder = IState(state).getOrder(settlement.takerOrderId);
         IOrderInfo.Order memory makerOrder = IState(state).getOrder(settlement.makerOrderId);
 
@@ -129,13 +146,16 @@ contract Vault is IVault, Ownable {
 
         _processSettlementInternal(settlement, takerOrder, makerOrder);
 
-        // --- Mark as processed ---
+        console.log("Vault._processSingle: Marking processed flag for Taker %s, Maker %s", settlement.takerOrderId, settlement.makerOrderId);
+        // --- Mark as processed --- //
         processedSettlements[settlement.takerOrderId][settlement.makerOrderId] = true;
 
         // Emit SettlementProcessed event after internal processing
         emit SettlementProcessed(settlement.takerOrderId, settlement.makerOrderId, settlement.quantity, makerOrder.price);
     }
 
+    // Renamed back from _processSingleSettlement_OriginalLogic
+    // This contains the core transfer logic called by _processSingleSettlement
     function _processSettlementInternal(
         IOrderInfo.Settlement memory settlement,
         IOrderInfo.Order memory takerOrder,
@@ -153,8 +173,8 @@ contract Vault is IVault, Ownable {
         quoteAmount = Math.mulDiv(baseAmount, makerOrder.price, 10**uint256(baseDecimals));
 
         // Calculate fees using current BPS rates
-        makerFee = (quoteAmount * makerFeeRateBps) / 10000;
-        takerFee = (quoteAmount * takerFeeRateBps) / 10000;
+        makerFee = (quoteAmount * uint256(makerFeeRateBps)) / 10000; // Explicitly cast BPS rate
+        takerFee = (quoteAmount * uint256(takerFeeRateBps)) / 10000; // Explicitly cast BPS rate
 
         // Perform transfers based on taker's side
         if (!takerOrder.isBuy) { // takerOrder.side == IOrderInfo.OrderSide.SELL
@@ -196,6 +216,7 @@ contract Vault is IVault, Ownable {
             console.log("Vault: Checking allowance/balance before Quote to Maker transfer (Taker BUY)");
             console.log("Vault: Taker (%s) Quote Balance: %s", takerOrder.trader, IERC20(quoteToken).balanceOf(takerOrder.trader));
             console.log("Vault: Vault Allowance from Taker (%s): %s", takerOrder.trader, IERC20(quoteToken).allowance(takerOrder.trader, address(this)));
+            console.log("Vault: DEBUG - Taker BUY - quoteAmount: %s, makerFee: %s", quoteAmount, makerFee); 
             transferTokens(quoteToken, takerOrder.trader, makerOrder.trader, quoteAmount - makerFee);
 
             // Taker transfers maker fee to recipient
@@ -261,10 +282,29 @@ contract Vault is IVault, Ownable {
         uint8 baseDecimals = IERC20Decimals(baseToken).decimals();
         uint256 quoteAmount = Math.mulDiv(baseAmount, makerOrder.price, 10**uint256(baseDecimals));
 
-        makerFee = (quoteAmount * makerFeeRateBps) / 10000;
-        takerFee = (quoteAmount * takerFeeRateBps) / 10000;
+        makerFee = (quoteAmount * uint256(makerFeeRateBps)) / 10000;
+        takerFee = (quoteAmount * uint256(takerFeeRateBps)) / 10000;
         return (makerFee, takerFee); // Return order matches signature
     }
 
+    // Fallback function to receive Ether (optional)
+    receive() external payable {}
+
+    // Function to withdraw ERC20 tokens accidentally sent to the contract (Admin only)
+    function withdrawERC20(address tokenAddress, address to, uint256 amount) external onlyAdmin {
+        require(to != address(0), "Vault: invalid recipient address");
+        uint256 balance = IERC20(tokenAddress).balanceOf(address(this));
+        require(amount <= balance, "Vault: insufficient balance");
+        IERC20(tokenAddress).safeTransfer(to, amount);
+    }
+
+    // Function to withdraw Ether accidentally sent to the contract (Admin only)
+    function withdrawEther(address payable to, uint256 amount) external onlyAdmin {
+        require(to != address(0), "Vault: invalid recipient address");
+        uint256 balance = address(this).balance;
+        require(amount <= balance, "Vault: insufficient balance");
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "Vault: Ether withdrawal failed");
+    }
 }
 

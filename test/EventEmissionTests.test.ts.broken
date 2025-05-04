@@ -1,0 +1,441 @@
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { CLOB, Book, State, Vault, MockToken } from "../typechain-types";
+
+describe("Event Emission Tests", function () {
+  let admin: SignerWithAddress;
+  let trader1: SignerWithAddress;
+  let trader2: SignerWithAddress;
+  let feeRecipient: SignerWithAddress;
+  let baseToken: MockToken;
+  let quoteToken: MockToken;
+  let state: State;
+  let book: Book;
+  let vault: Vault;
+  let clob: CLOB;
+
+  const INITIAL_BALANCE = ethers.parseUnits("1000", 18);
+  const ORDER_PRICE = ethers.parseUnits("100", 18);
+  const ORDER_QUANTITY = ethers.parseUnits("1", 18);
+  
+  // Order statuses
+  const ORDER_STATUS_OPEN = 0;
+  const ORDER_STATUS_PARTIALLY_FILLED = 1;
+  const ORDER_STATUS_FILLED = 2;
+  const ORDER_STATUS_CANCELED = 3;
+
+  beforeEach(async function () {
+    // Get signers
+    [admin, trader1, trader2, feeRecipient] = await ethers.getSigners();
+
+    // Deploy mock tokens
+    const MockTokenFactory = await ethers.getContractFactory("MockToken");
+    baseToken = (await MockTokenFactory.deploy("Base Token", "BASE", 18)) as unknown as MockToken;
+    quoteToken = (await MockTokenFactory.deploy("Quote Token", "QUOTE", 18)) as unknown as MockToken;
+
+    // Deploy State contract
+    const StateFactory = await ethers.getContractFactory("State");
+    state = (await StateFactory.deploy(await admin.getAddress())) as unknown as State;
+
+    // Deploy Book contract
+    const BookFactory = await ethers.getContractFactory("Book");
+    book = (await BookFactory.deploy(
+      await admin.getAddress(),
+      await state.getAddress(),
+      await baseToken.getAddress(),
+      await quoteToken.getAddress()
+    )) as unknown as Book;
+
+    // Deploy Vault contract
+    const VaultFactory = await ethers.getContractFactory("Vault");
+    vault = (await VaultFactory.deploy(
+      await admin.getAddress(),
+      await state.getAddress(),
+      await feeRecipient.getAddress(),
+      50, // makerFeeRate
+      100 // takerFeeRate
+    )) as unknown as Vault;
+
+    // Deploy CLOB contract
+    const CLOBFactory = await ethers.getContractFactory("CLOB");
+    clob = (await CLOBFactory.deploy(
+      await admin.getAddress(),
+      await state.getAddress(),
+      await book.getAddress(),
+      await vault.getAddress()
+    )) as unknown as CLOB;
+
+    // Add supported trading pair
+    await clob.connect(admin).addSupportedPair(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress()
+    );
+    
+    // Set up permissions
+    await state.addAdmin(await clob.getAddress());
+    await state.addAdmin(await book.getAddress());
+    await state.addAdmin(await vault.getAddress());
+    
+    // Set admin permissions first - make sure admin is the owner
+    await book.connect(admin).setAdmin(await admin.getAddress());
+    
+    // Set CLOB address in Book directly using admin account
+    await book.connect(admin).setCLOB(await clob.getAddress());
+    
+    await book.connect(admin).setVault(await vault.getAddress());
+    await vault.connect(admin).setBook(await clob.getAddress()); // Vault needs CLOB for settlement processing
+    await vault.connect(admin).setCLOB(await clob.getAddress()); // Vault needs CLOB for authorization
+
+    // Mint tokens to traders
+    await baseToken.mint(await trader1.getAddress(), INITIAL_BALANCE);
+    await baseToken.mint(await trader2.getAddress(), INITIAL_BALANCE);
+    await quoteToken.mint(await trader1.getAddress(), INITIAL_BALANCE);
+    await quoteToken.mint(await trader2.getAddress(), INITIAL_BALANCE);
+
+    // Approve tokens for trading to vault
+    await baseToken.connect(trader1).approve(await vault.getAddress(), INITIAL_BALANCE);
+    await baseToken.connect(trader2).approve(await vault.getAddress(), INITIAL_BALANCE);
+    await quoteToken.connect(trader1).approve(await vault.getAddress(), INITIAL_BALANCE);
+    await quoteToken.connect(trader2).approve(await vault.getAddress(), INITIAL_BALANCE);
+    
+    // Also approve tokens to CLOB directly (may not be needed depending on final flow)
+    await baseToken.connect(trader1).approve(await clob.getAddress(), INITIAL_BALANCE);
+    await baseToken.connect(trader2).approve(await clob.getAddress(), INITIAL_BALANCE);
+    await quoteToken.connect(trader1).approve(await clob.getAddress(), INITIAL_BALANCE);
+    await quoteToken.connect(trader2).approve(await clob.getAddress(), INITIAL_BALANCE);
+  });
+
+  it("should emit OrderPlaced event when placing an order", async function () {
+    // Place a limit buy order using placeLimitOrder
+    const tx = await clob.connect(trader1).placeLimitOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      true,                         // isBuy
+      ORDER_PRICE,
+      ORDER_QUANTITY
+    );
+
+    // Wait for transaction to be mined
+    const receipt = await tx.wait();
+    
+    // Find the OrderPlaced event in the logs
+    const event = receipt?.logs.find(
+      (log) => {
+        try {
+          const parsedLog = clob.interface.parseLog({
+            topics: log.topics as string[],
+            data: log.data,
+          });
+          return parsedLog?.name === "OrderPlaced";
+        } catch (e) {
+          return false;
+        }
+      }
+    );
+
+    // Verify the event was emitted
+    expect(event).to.not.be.undefined;
+    
+    // Parse the event data
+    const parsedEvent = clob.interface.parseLog({
+      topics: event?.topics as string[],
+      data: event?.data as string,
+    });
+    
+    // Verify event parameters
+    expect(parsedEvent?.args.trader).to.equal(await trader1.getAddress());
+    expect(parsedEvent?.args.isBuy).to.equal(true);
+    expect(parsedEvent?.args.price).to.equal(ORDER_PRICE);
+    expect(parsedEvent?.args.quantity).to.equal(ORDER_QUANTITY);
+    // Order ID is generated, just check it exists
+    expect(parsedEvent?.args.orderId).to.be.a("bigint"); 
+  });
+
+  it("should emit OrderCreated event in State contract when placing an order", async function () {
+    // Place a limit sell order using placeLimitOrder
+    const tx = await clob.connect(trader1).placeLimitOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      false,                        // isBuy
+      ORDER_PRICE,
+      ORDER_QUANTITY
+    );
+
+    // Wait for transaction to be mined
+    const receipt = await tx.wait();
+    
+    // Find the OrderCreated event emitted by the State contract
+    const StateFactory = await ethers.getContractFactory("State");
+    const stateInterface = StateFactory.interface;
+    
+    let parsedEvent = null;
+    if (!receipt) {
+      throw new Error("Transaction receipt is null");
+    }
+    const stateAddress = await state.getAddress(); // Get state address for comparison
+    for (const log of receipt.logs) {
+      try {
+        // Check if this log is from our state contract
+        if (log.address.toLowerCase() === stateAddress.toLowerCase()) {
+          const tempParsedLog = stateInterface.parseLog({
+            topics: log.topics,
+            data: log.data,
+          });
+          
+          // Check if it's the OrderCreated event
+          if (tempParsedLog && tempParsedLog.name === "OrderCreated") {
+            parsedEvent = tempParsedLog;
+            break;
+          }
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+
+    // Ensure the event was found and parsed
+    if (!parsedEvent) {
+      throw new Error("OrderCreated event not found or could not be parsed correctly");
+    }
+
+    // Verify event parameters
+    // OrderCreated(uint256 orderId, address trader, address baseToken, address quoteToken, uint256 price, uint256 quantity, bool isBuy, uint8 orderType);
+    expect(parsedEvent.name).to.equal("OrderCreated");
+    expect(parsedEvent.args.trader).to.equal(await trader1.getAddress());
+    expect(parsedEvent.args.baseToken).to.equal(await baseToken.getAddress());
+    expect(parsedEvent.args.quoteToken).to.equal(await quoteToken.getAddress());
+    expect(parsedEvent.args.price).to.equal(ORDER_PRICE);
+    expect(parsedEvent.args.quantity).to.equal(ORDER_QUANTITY);
+    expect(parsedEvent.args.isBuy).to.equal(false);
+    expect(parsedEvent.args.orderType).to.equal(0); // LIMIT
+  });
+
+  it("should emit OrderAddedToBook event when adding an order to the book", async function () {
+    // Place a limit buy order using placeLimitOrder
+    const tx = await clob.connect(trader1).placeLimitOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      true,                         // isBuy
+      ORDER_PRICE,
+      ORDER_QUANTITY
+    );
+
+    // Wait for transaction to be mined
+    const receipt = await tx.wait();
+    
+    // Get the book address first
+    const bookAddress = await book.getAddress();
+    
+    // Find the OrderAddedToBook event in the logs
+    const event = receipt?.logs.find(
+      (log) => {
+        try {
+          // Check if the log is from the Book contract
+          if (log.address.toLowerCase() !== bookAddress.toLowerCase()) {
+            return false;
+          }
+          
+          const parsedLog = book.interface.parseLog({
+            topics: log.topics as string[],
+            data: log.data,
+          });
+          return parsedLog?.name === "OrderAdded";
+        } catch (e) {
+          return false;
+        }
+      }
+    );
+
+    // Verify the event was emitted
+    expect(event).to.not.be.undefined;
+    
+    // Parse the event data
+    const parsedEvent = book.interface.parseLog({
+      topics: event?.topics as string[],
+      data: event?.data as string,
+    });
+    
+    // Verify event parameters
+    expect(parsedEvent?.args.price).to.equal(ORDER_PRICE);
+    expect(parsedEvent?.args.quantity).to.equal(ORDER_QUANTITY);
+    expect(parsedEvent?.args.isBuy).to.equal(true);
+  });
+
+  it("should emit OrdersMatched and TokenTransferred events when orders match", async function () {
+    // Place a limit sell order using placeLimitOrder
+    await clob.connect(trader1).placeLimitOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      false,                        // isBuy
+      ORDER_PRICE,
+      ORDER_QUANTITY
+    );
+
+    // Place a matching limit buy order using placeLimitOrder
+    const tx = await clob.connect(trader2).placeLimitOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      true,                         // isBuy
+      ORDER_PRICE,
+      ORDER_QUANTITY
+    );
+
+    // Wait for transaction to be mined
+    const receipt = await tx.wait();
+    
+    // Get the book address first
+    const bookAddress = await book.getAddress();
+    
+    // Find the OrdersMatched event in the logs
+    const matchEvent = receipt?.logs.find(
+      (log) => {
+        try {
+          // Check if the log is from the Book contract
+          if (log.address.toLowerCase() !== bookAddress.toLowerCase()) {
+            return false;
+          }
+          
+          const parsedLog = book.interface.parseLog({
+            topics: log.topics as string[],
+            data: log.data,
+          });
+         return parsedLog?.name === "OrderMatched";
+        } catch (e) {
+          return false;
+        }
+      }
+    );
+
+    // Verify the OrdersMatched event was emitted
+    expect(matchEvent).to.not.be.undefined;
+    
+    // Get the token addresses first
+    const baseTokenAddress = await baseToken.getAddress();
+    const quoteTokenAddress = await quoteToken.getAddress();
+    
+    // Find the TokenTransferred events in the logs (using ERC20 standard event)
+    const tokenEvents = receipt?.logs.filter(
+      (log) => {
+        try {
+          // Check if the log is from either token contract
+          if (log.address.toLowerCase() !== baseTokenAddress.toLowerCase() && 
+              log.address.toLowerCase() !== quoteTokenAddress.toLowerCase()) {
+            return false;
+          }
+          
+          // Use the standard ERC20 interface to parse
+          const erc20Interface = (await ethers.getContractFactory("MockToken")).interface;
+          const parsedLog = erc20Interface.parseLog({
+            topics: log.topics as string[],
+            data: log.data,
+          });
+          return parsedLog?.name === "Transfer";
+        } catch (e) {
+          return false;
+        }
+      }
+    );
+
+    // Expect at least 2 transfers (base and quote between traders) + fees
+    expect(tokenEvents?.length).to.be.at.least(2);
+    
+    // Check one of the transfers
+    if (tokenEvents && tokenEvents.length > 0) {
+      const erc20Interface = (await ethers.getContractFactory("MockToken")).interface;
+      const parsedEvent = erc20Interface.parseLog({
+        topics: tokenEvents[0].topics as string[],
+        data: tokenEvents[0].data as string,
+      });
+      
+      // Verify standard ERC20 Transfer event parameters
+      expect(parsedEvent?.args.from).to.not.be.undefined;
+      expect(parsedEvent?.args.to).to.not.be.undefined;
+      expect(parsedEvent?.args.value).to.not.be.undefined;
+    }
+  });
+
+  it("should emit OrderStatusUpdated event when order status changes", async function () {
+    // Place a limit sell order using placeLimitOrder
+    const tx1 = await clob.connect(trader1).placeLimitOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      false,                        // isBuy
+      ORDER_PRICE,
+      ORDER_QUANTITY
+    );
+    
+    const receipt1 = await tx1.wait();
+    
+    // Get the order ID from the OrderPlaced event
+    const orderPlacedEvent = receipt1?.logs.find(
+      (log) => {
+        try {
+          const parsedLog = clob.interface.parseLog({
+            topics: log.topics as string[],
+            data: log.data,
+          });
+          return parsedLog?.name === "OrderPlaced";
+        } catch (e) {
+          return false;
+        }
+      }
+    );
+    
+    const parsedOrderPlacedEvent = clob.interface.parseLog({
+      topics: orderPlacedEvent?.topics as string[],
+      data: orderPlacedEvent?.data as string,
+    });
+    
+    const orderId = parsedOrderPlacedEvent?.args.orderId;
+    
+    // Place a matching limit buy order using placeLimitOrder
+    const tx2 = await clob.connect(trader2).placeLimitOrder(
+      await baseToken.getAddress(),
+      await quoteToken.getAddress(),
+      true,                         // isBuy
+      ORDER_PRICE,
+      ORDER_QUANTITY
+    );
+
+    // Wait for transaction to be mined
+    const receipt2 = await tx2.wait();
+    
+    // Get the state address first
+    const stateAddress = await state.getAddress();
+    
+    // Find the OrderStatusUpdated event in the logs
+    const event = receipt2?.logs.find(
+      (log) => {
+        try {
+          // Check if the log is from the State contract
+          if (log.address.toLowerCase() !== stateAddress.toLowerCase()) {
+            return false;
+          }
+          
+          const parsedLog = state.interface.parseLog({
+            topics: log.topics as string[],
+            data: log.data,
+          });
+          return parsedLog?.name === "OrderStatusUpdated";
+        } catch (e) {
+          return false;
+        }
+      }
+    );
+
+    // Verify the event was emitted
+    expect(event).to.not.be.undefined;
+    
+    // Parse the event data
+    const parsedEvent = state.interface.parseLog({
+      topics: event?.topics as string[],
+      data: event?.data as string,
+    });
+    
+    // Verify event parameters
+    expect(parsedEvent?.args.orderId).to.equal(orderId);
+    expect(parsedEvent?.args.newStatus).to.equal(ORDER_STATUS_FILLED);
+  });
+});
+

@@ -94,6 +94,12 @@ describe("CLOB Contract Tests", function () {
 
     // Add supported trading pair
     await clob.connect(owner).addSupportedPair(await baseToken.getAddress(), await quoteToken.getAddress());
+    
+    // Approve tokens for trading (for CLOB contract)
+    await baseToken.connect(trader1).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
+    await quoteToken.connect(trader1).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
+    await baseToken.connect(trader2).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
+    await quoteToken.connect(trader2).approve(await vault.getAddress(), INITIAL_MINT_AMOUNT);
   });
 
   describe("Deployment", function () {
@@ -113,13 +119,6 @@ describe("CLOB Contract Tests", function () {
   });
 
   describe("Order Placement", function () {
-    beforeEach(async function () {
-      // Approve tokens for trading
-      await baseToken.connect(trader1).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
-      await quoteToken.connect(trader1).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
-      await baseToken.connect(trader2).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
-      await quoteToken.connect(trader2).approve(await clob.getAddress(), INITIAL_MINT_AMOUNT);
-    });
 
     it("Should place a limit buy order", async function () {
       const price = ethers.parseUnits("100", QUOTE_TOKEN_DECIMALS);
@@ -140,66 +139,22 @@ describe("CLOB Contract Tests", function () {
         throw new Error("Transaction receipt is null");
       }
       
-      // Find the OrderCreated event from the State contract
-      const stateInterface = state.interface; // Get interface for State contract
-      const stateAddress = await state.getAddress(); // Get state address before the callback
+      // Find the OrderPlaced event from the CLOB contract
+      const clobInterface = clob.interface;
+      const clobAddress = await clob.getAddress();
+      let orderPlacedLog = receipt.logs.find(log => log.address === clobAddress && log.fragment && log.fragment.name === "OrderPlaced");
       
-      // Try multiple approaches to find the OrderCreated event
-      let orderCreatedLog;
-      
-      // Approach 1: Try with full event signature
-      const orderCreatedTopic1 = ethers.id("OrderCreated(uint256,address,address,address,uint256,uint256,bool,uint8)");
-      orderCreatedLog = receipt.logs.find(log => log.address === stateAddress && log.topics[0] === orderCreatedTopic1);
-      
-      // Approach 2: Try with just the event name
-      if (!orderCreatedLog) {
-        const orderCreatedTopic2 = ethers.id("OrderCreated");
-        orderCreatedLog = receipt.logs.find(log => log.address === stateAddress && log.topics[0].includes(orderCreatedTopic2.substring(2, 10)));
-      }
-      
-      // Approach 3: Look for any log from the state contract
-      if (!orderCreatedLog) {
-        orderCreatedLog = receipt.logs.find(log => log.address === stateAddress);
-        console.log("Found log from state contract:", orderCreatedLog);
-      }
-      
-      // Approach 4: Use the order counter as a fallback
-      if (!orderCreatedLog) {
-        console.log("Could not find OrderCreated event, using order counter as fallback");
-        const orderCounter = await state.orderCounter();
-        const orderId = orderCounter;
-        
-        // Verify the order exists
-        const order = await state.getOrder(orderId);
-        expect(order.trader).to.equal(trader1Address);
-        expect(order.baseToken).to.equal(await baseToken.getAddress());
-        expect(order.quoteToken).to.equal(await quoteToken.getAddress());
-        expect(order.price).to.equal(price);
-        expect(order.quantity).to.equal(quantity);
-        expect(order.isBuy).to.be.true;
-        expect(order.orderType).to.equal(0); // LIMIT
-        
-        return; // Skip the rest of the test since we're using the fallback approach
-      }
-      
-      expect(orderCreatedLog, "OrderCreated event not found").to.exist;
+      expect(orderPlacedLog, "OrderPlaced event not found").to.exist;
 
       // Parse the event log to get the orderId
-      const parsedLog = stateInterface.parseLog(orderCreatedLog!);
-      const orderId = (parsedLog as any).args[0]; // Assuming orderId is the first argument
+      const parsedLog = clobInterface.parseLog(orderPlacedLog!);
+      const orderId = (parsedLog as any).args.orderId;
 
       expect(orderId).to.be.gt(0); // Check if orderId is valid
       
-      // Verify the order exists by trying to get it using the extracted orderId
-      let order;
-      try {
-        order = await state.getOrder(orderId);
-      } catch (error) {
-        // If getOrder reverts, the order doesn't exist or there was another issue
-        console.error(`Error fetching order ${orderId}:`, error);
-        order = null; // Set order to null to fail the assertions below
-      }
-      expect(order, `Order with ID ${orderId} should exist`).to.not.be.null; // Ensure the order was retrieved successfully
+      // Verify the order exists in the State contract
+      const order = await state.getOrder(orderId);
+      expect(order, `Order with ID ${orderId} should exist`).to.not.be.null;
       
       // Verify the order details
       expect(order!.trader).to.equal(trader1Address);
@@ -209,6 +164,7 @@ describe("CLOB Contract Tests", function () {
       expect(order!.quantity).to.equal(quantity);
       expect(order!.isBuy).to.be.true;
       expect(order!.orderType).to.equal(0); // LIMIT
+      expect(order!.status).to.equal(0); // OPEN
     });
 
     it("Should reject orders for unsupported trading pairs", async function () {
@@ -230,12 +186,14 @@ describe("CLOB Contract Tests", function () {
   });
 
   describe("Symphony Integration", function () {
-    it("Should set Symphony adapter", async function () {
-      await clob.connect(owner).setSymphonyAdapter(trader1Address);
+    it("Should set Symphony adapter and enable integration", async function () {
+      await clob.connect(owner).setSymphonyAdapter(trader1Address); // Use trader1 as dummy adapter address
       await clob.connect(owner).setSymphonyIntegrationEnabled(true);
       
-      // We don't have a direct getter for symphonyAdapter, but we can test functionality
-      // that depends on it being set correctly
+      // Verify the state was set correctly
+      expect(await clob.symphonyAdapter()).to.equal(trader1Address);
+      expect(await clob.symphonyIntegrationEnabled()).to.be.true;
     });
   });
 });
+
