@@ -1,13 +1,13 @@
 # SEI CLOB Implementation Strategies
 
-This document compares our current SEI CLOB implementation with Phoenix and DeepBook, and provides specific implementation strategies for improvements in each key area.
+This document compares our current SEI CLOB implementation with competitor implementations, and provides specific implementation strategies for improvements in each key area.
 
 ## 1. Order Matching Behavior
 
 ### Current Status
 - **SEI CLOB**: Matches orders incrementally rather than all at once. When matching orders across multiple price levels, buy orders may be partially filled instead of fully filled. Market orders don't necessarily match against all available orders.
-- **Phoenix**: Uses a crankless design with atomic settlement, ensuring complete execution of trades.
-- **DeepBook**: Implements a more efficient matching algorithm that can process multiple orders at different price levels in a single transaction.
+- **Competitor DEX A**: Uses a crankless design with atomic settlement, ensuring complete execution of trades.
+- **Competitor DEX B**: Implements a more efficient matching algorithm that can process multiple orders at different price levels in a single transaction.
 
 ### Implementation Strategy
 1. **Enhance the Matching Algorithm**:
@@ -130,8 +130,8 @@ This document compares our current SEI CLOB implementation with Phoenix and Deep
 
 ### Current Status
 - **SEI CLOB**: Experiences precision loss when trading between tokens with different decimal places. Small trades with tokens of fewer decimals might have fees rounded to zero.
-- **Phoenix**: Implements a sophisticated type system for quantities that prevents mixing incompatible units, with explicit conversion functions between different units.
-- **DeepBook**: Uses Solana's native 64-bit integer types for better precision and maintains consistent decimal handling across different token types.
+- **Competitor DEX A**: Implements a sophisticated type system for quantities that prevents mixing incompatible units, with explicit conversion functions between different units.
+- **Competitor DEX B**: Uses Solana's native 64-bit integer types for better precision and maintains consistent decimal handling across different token types.
 
 ### Implementation Strategy
 1. **Create a Type-Safe Quantity Library**:
@@ -262,8 +262,8 @@ This document compares our current SEI CLOB implementation with Phoenix and Deep
 
 ### Current Status
 - **SEI CLOB**: Limited to approximately 1,000 tokens (with 18 decimals) and prices up to 100,000 tokens due to arithmetic overflow or gas constraints.
-- **Phoenix**: Uses efficient data structures and optimized arithmetic operations to handle larger values without overflow issues.
-- **DeepBook**: Can handle significantly larger order sizes (millions of tokens) due to Solana's architecture and better handling of large number calculations.
+- **Competitor DEX A**: Uses efficient data structures and optimized arithmetic operations to handle larger values without overflow issues.
+- **Competitor DEX B**: Can handle significantly larger order sizes (millions of tokens) due to Solana's architecture and better handling of large number calculations.
 
 ### Implementation Strategy
 1. **Implement SafeMath for Large Values**:
@@ -388,8 +388,8 @@ This document compares our current SEI CLOB implementation with Phoenix and Deep
 
 ### Current Status
 - **SEI CLOB**: Fees for small trades might be rounded down to zero, especially when trading tokens with different decimal places. No mechanism to track accumulated fees.
-- **Phoenix**: Implements specific protection against fee adjustment overflow and uses the type system to ensure fee calculations maintain proper units.
-- **DeepBook**: More precise fee calculation that handles different token decimals better, with comprehensive fee tracking.
+- **Competitor DEX A**: Implements specific protection against fee adjustment overflow and uses the type system to ensure fee calculations maintain proper units.
+- **Competitor DEX B**: More precise fee calculation that handles different token decimals better, with comprehensive fee tracking.
 
 ### Implementation Strategy
 1. **Implement Precise Fee Calculation**:
@@ -507,8 +507,8 @@ This document compares our current SEI CLOB implementation with Phoenix and Deep
 
 ### Current Status
 - **SEI CLOB**: Some error messages are generic and don't provide enough context. Limited input validation and failure recovery mechanisms.
-- **Phoenix**: Uses the type system to prevent many errors at compile time, with clear error messages and better failure recovery mechanisms.
-- **DeepBook**: More detailed error messages and handling, with thorough input validation at multiple levels.
+- **Competitor DEX A**: Uses the type system to prevent many errors at compile time, with clear error messages and better failure recovery mechanisms.
+- **Competitor DEX B**: More detailed error messages and handling, with thorough input validation at multiple levels.
 
 ### Implementation Strategy
 1. **Implement Detailed Error Messages**:
@@ -629,8 +629,8 @@ This document compares our current SEI CLOB implementation with Phoenix and Deep
 
 ### Current Status
 - **SEI CLOB**: Current batch processing approach has limitations for deep order books, and storage access patterns could be optimized.
-- **Phoenix**: Crankless design reduces gas costs by eliminating the need for external triggers, with optimized storage layout.
-- **DeepBook**: Uses data structures optimized for the Solana VM, with different gas economics allowing for more computation per transaction.
+- **Competitor DEX A**: Crankless design reduces gas costs by eliminating the need for external triggers, with optimized storage layout.
+- **Competitor DEX B**: Uses data structures optimized for the Solana VM, with different gas economics allowing for more computation per transaction.
 
 ### Implementation Strategy
 1. **Optimize Batch Processing**:
@@ -731,8 +731,8 @@ This document compares our current SEI CLOB implementation with Phoenix and Deep
 
 ### Current Status
 - **SEI CLOB**: Maintains a custody-free approach where users retain control of assets until execution, with functionality separated into CLOB, Book, State, and Vault components.
-- **Phoenix**: Uses a crankless architecture that eliminates the need for external triggers, with a comprehensive type system.
-- **DeepBook**: More integrated design optimized for the Solana VM, using Solana's program-owned accounts model.
+- **Competitor DEX A**: Uses a crankless architecture that eliminates the need for external triggers, with a comprehensive type system.
+- **Competitor DEX B**: More integrated design optimized for the Solana VM, using Solana's program-owned accounts model.
 
 ### Implementation Strategy
 1. **Maintain Custody-Free Design with Improved Integration**:
@@ -926,4 +926,4 @@ By implementing these strategies, our SEI CLOB can achieve significant improveme
 6. **Gas Optimization**: Optimized batch processing and storage layout
 7. **Contract Architecture**: Improved component integration while maintaining custody-free design
 
-These improvements will bring our implementation closer to industry standards like Phoenix and DeepBook while preserving the unique aspects of our design that are tailored for the SEI ecosystem.
+These improvements will bring our implementation closer to industry standards like competitor implementations while preserving the unique aspects of our design that are tailored for the SEI ecosystem.

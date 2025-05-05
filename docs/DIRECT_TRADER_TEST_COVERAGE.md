@@ -19,9 +19,9 @@ Our current test coverage for direct trader functionalities in the SEI CLOB impl
 - Best bid/ask price verification
 - Quantity aggregation at price levels
 
-## DeepBook's Test Coverage
+## Competitor Test Coverage Example
 
-DeepBook's test coverage is more comprehensive and includes:
+A competitor's test coverage is more comprehensive and includes:
 
 ### order_tests.move
 - Partial fills with precise quantity verification
@@ -45,7 +45,7 @@ DeepBook's test coverage is more comprehensive and includes:
 
 ## Missing Test Scenarios
 
-Based on the comparison with DeepBook's approach, the following test scenarios are missing from our current implementation:
+Based on comparison with competitor approaches, the following test scenarios are missing from our current implementation:
 
 1. **Price Improvement Scenarios**
    - Testing when a buy order price is higher than the sell order price

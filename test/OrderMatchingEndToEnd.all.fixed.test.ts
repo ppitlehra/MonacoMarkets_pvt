@@ -1,3 +1,9 @@
+/**
+ * Copyright © 2025 Prajwal Pitlehra
+ * This file is proprietary and confidential.
+ * Shared for evaluation purposes only. Redistribution or reuse is prohibited without written permission.
+ */
+
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";

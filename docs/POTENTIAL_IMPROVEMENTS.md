@@ -1,8 +1,8 @@
-# Potential Improvements for SEI CLOB Based on Phoenix and DeepBook Analysis
+# Potential Improvements for SEI CLOB Based on Competitor Analysis
 
-Based on the architectural comparison between SEI CLOB, Phoenix, and DeepBook/Openbook, and considering the test failures observed, this document outlines potential improvements for the SEI CLOB implementation.
+Based on the architectural comparison between SEI CLOB and competitor DEXs, and considering the test failures observed, this document outlines potential improvements for the SEI CLOB implementation.
 
-## 1. State Management Improvements
+## 1. State Synchronization and Management
 
 ### Current Issue
 The recurring `State: order does not exist` error in tests suggests a synchronization issue between the `Vault` and `State` contracts. When `Vault.calculateFees` attempts to retrieve order details from the `State` contract, the specified order ID cannot be found.
@@ -20,7 +20,13 @@ The recurring `State: order does not exist` error in tests suggests a synchroniz
    - Consider caching frequently accessed order state within the `Vault` to reduce cross-contract calls.
    - Implement proper cache invalidation mechanisms to ensure data consistency.
 
-## 2. Test Environment Improvements
+### Proposal: Improve Synchronization & Logging
+
+*   **Clearer Dependencies:** Explicitly document or enforce the order of operations between `CLOB`, `Book`, `State`, and `Vault` during complex flows like matching and settlement.
+*   **Enhanced Logging:** Add more detailed events (similar to logging approaches seen elsewhere) in `State`, `Book`, and `Vault` to trace order status changes and settlement steps. This helps off-chain verification and debugging.
+*   **State Consistency Checks:** Consider adding sanity checks within `Vault` or `CLOB` to verify order existence or status in `State` before proceeding, potentially reverting with clearer errors if inconsistencies are found.
+
+## 2. Settlement Robustness
 
 ### Current Issue
 Test failures appear to be related to setup issues where orders aren't properly registered in the `State` contract before the `Vault` attempts to access them.
@@ -38,7 +44,13 @@ Test failures appear to be related to setup issues where orders aren't properly 
    - Add explicit validation steps in tests to verify that orders exist in the `State` contract before proceeding to operations that depend on them.
    - Implement test middleware that logs the state of key contracts at each step for easier debugging.
 
-## 3. Architecture Refinements
+### Proposal: Refine Settlement Logic
+
+*   **Atomicity:** Design critical operations to be atomic where possible, similar to approaches seen in competitor DEXs.
+*   **Idempotency:** Ensure `Vault.processSettlements` is fully idempotent using the `processedSettlements` mapping to prevent any possibility of double-spending, even if called multiple times with the same settlement data.
+*   **Error Granularity:** Provide more specific revert reasons within the settlement process (e.g., `Vault: Insufficient_Maker_Allowance`, `Vault: Insufficient_Taker_Balance`).
+
+## 3. Architecture & Modularity
 
 ### Current Issue
 The three-layer architecture (Book, State, Vault) creates dependencies where contracts rely on state managed by other contracts, introducing potential points of failure.
@@ -56,7 +68,12 @@ The three-layer architecture (Book, State, Vault) creates dependencies where con
    - Review all cross-contract calls and optimize for gas efficiency and reliability.
    - Consider implementing a facade pattern that provides a unified interface to the three-layer system, hiding the complexity of cross-contract interactions.
 
-## 4. Error Handling Enhancements
+### Proposal: Review Contract Interactions
+
+*   **Evaluate Interaction Patterns:** While the separation is logical, analyze if the number of cross-contract calls during critical paths (matching, settlement) can be reduced without sacrificing modularity.
+*   **Clarify Authorization:** Refactor or clarify the naming/logic of modifiers like `onlyBook` in `Vault.sol` to accurately reflect the intended caller (`CLOB`).
+
+## 4. Testing Enhancements
 
 ### Current Issue
 The current error handling may not provide sufficient detail to diagnose issues, particularly in cross-contract interactions.
@@ -73,24 +90,6 @@ The current error handling may not provide sufficient detail to diagnose issues,
 3. **Comprehensive Logging**:
    - Similar to the `logs.rs` file in DeepBook, implement detailed logging for important operations.
    - Consider using events for logging to make debugging easier.
-
-## 5. Symphony Integration Refinements
-
-### Current Issue
-The Symphony integration adds complexity with its two-stage settlement process, potentially introducing additional points where state synchronization can fail.
-
-### Potential Improvements
-1. **Simplify Adapter Pattern**:
-   - Review the `SymphonyAdapter` implementation to ensure it maintains consistent state across all operations.
-   - Consider implementing a more direct integration that reduces the number of steps in the settlement process.
-
-2. **Enhance Fee Calculation Robustness**:
-   - Ensure fee calculations are resilient to edge cases like zero amounts, partial fills, and non-standard tokens.
-   - Implement additional validation to prevent fee calculation attempts on non-existent orders.
-
-3. **Improve Settlement Verification**:
-   - Add explicit verification steps in the settlement process to ensure all required state is available.
-   - Implement recovery mechanisms for handling partial or failed settlements.
 
 ## Implementation Priority
 

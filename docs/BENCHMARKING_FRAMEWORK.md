@@ -83,10 +83,10 @@ We will primarily use Hardhat tests and associated tools to measure these KPIs:
 
 ## 3. Competitor Benchmark Comparison & Targets
 
-We aim to be competitive with leading DEXes like DeepBook (Sui) and Phoenix (Solana), acknowledging platform differences.
+We aim to be competitive with leading DEXes on other high-performance blockchains, acknowledging platform differences.
 
-- **DeepBook (Sui):** Known for Critbit Tree structure, efficient gas scaling, high throughput via Sui's parallelism.
-- **Phoenix (Solana):** Extremely gas/speed optimized for Solana, specialized data structures, market-wide crossing.
+- **Competitor DEX B (Sui):** Known for Critbit Tree structure, efficient gas scaling, high throughput via Sui's parallelism.
+- **Competitor DEX A (Solana):** Extremely gas/speed optimized for Solana, specialized data structures, market-wide crossing.
 
 **Realistic Targets for SEI CLOB:**
 

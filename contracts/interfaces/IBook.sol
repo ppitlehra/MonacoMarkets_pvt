@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: MIT
+// Copyright © 2025 Prajwal Pitlehra
+// This file is proprietary and confidential.
+// Shared for evaluation purposes only. Redistribution or reuse is prohibited without written permission.
 pragma solidity ^0.8.17;
 
 import "./IOrderInfo.sol";

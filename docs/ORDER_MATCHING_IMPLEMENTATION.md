@@ -1,6 +1,6 @@
-# Order Matching Behavior Implementation Plan
+# Enhanced Order Matching Implementation
 
-This document outlines a comprehensive approach to improve the order matching behavior in our SEI CLOB implementation, drawing inspiration from DeepBook and Phoenix while maintaining our custody-free design.
+This document details the implementation of the enhanced order matching algorithm for the SEI CLOB, drawing inspiration from established DEX implementations while maintaining our custody-free design.
 
 ## Current Limitations
 
@@ -474,23 +474,23 @@ function updateTakerOrderStatus(IOrderInfo.Order memory order, uint256 filledQua
 }
 ```
 
-## Inspiration from Phoenix and DeepBook
+## Inspiration from Competitor Implementations
 
-### Phoenix-Inspired Features
+### Competitor A (e.g., Solana-based) - Inspired Features
 
-1. **Type-Safe Quantity Handling**: Phoenix uses wrapper types around primitive number types to ensure arithmetic operations only occur on quantities that make sense. We'll implement a similar approach in our quantity handling.
+1. **Type-Safe Quantity Handling**: Competitor A uses wrapper types around primitive number types to ensure arithmetic operations only occur on quantities that make sense. We'll implement a similar approach in our quantity handling.
 
-2. **Atomic Settlement**: Phoenix atomically settles trades, ensuring complete execution. Our enhanced matching algorithm will provide similar guarantees.
+2. **Atomic Settlement**: Competitor A atomically settles trades, ensuring complete execution. Our enhanced matching algorithm will provide similar guarantees.
 
-3. **Crankless Design**: While Phoenix operates without a "crank" (external trigger for matching), we'll optimize our matching to minimize the need for external triggers.
+3. **Crankless Design**: While Competitor A operates without a "crank" (external trigger for matching), we'll optimize our matching to minimize the need for external triggers.
 
-### DeepBook-Inspired Features
+### Competitor B (e.g., Solana/Sui-based) - Inspired Features
 
-1. **Efficient Matching Algorithm**: DeepBook uses an efficient matching algorithm that can process multiple orders at different price levels. Our enhanced matching algorithm will provide similar capabilities.
+1. **Efficient Matching Algorithm**: Competitor B uses an efficient matching algorithm that can process multiple orders at different price levels. Our enhanced matching algorithm will provide similar capabilities.
 
-2. **Batch Processing**: DeepBook utilizes Solana's transaction model for efficient batch processing. We'll implement batch processing optimized for Ethereum/SEI.
+2. **Batch Processing**: Competitor B utilizes Solana's transaction model for efficient batch processing. We'll implement batch processing optimized for Ethereum/SEI.
 
-3. **Optimized Data Structures**: DeepBook uses data structures optimized for the Solana VM. We'll optimize our data structures for Ethereum/SEI.
+3. **Optimized Data Structures**: Competitor B uses data structures optimized for the Solana VM. We'll optimize our data structures for Ethereum/SEI.
 
 ## Testing Strategy
 
@@ -524,4 +524,4 @@ To ensure our improved order matching implementation works correctly, we'll:
 
 By implementing these improvements, we'll significantly enhance the order matching behavior in our SEI CLOB implementation. The enhanced matching algorithm will ensure orders are fully matched across multiple price levels, market orders match against all available orders, and the system operates efficiently even with deep order books.
 
-These improvements will bring our implementation closer to industry standards like Phoenix and DeepBook while maintaining our custody-free design.
+These improvements will bring our implementation closer to industry standards like Competitor A and Competitor B while maintaining our custody-free design.

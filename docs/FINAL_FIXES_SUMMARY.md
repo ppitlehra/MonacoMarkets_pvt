@@ -124,6 +124,11 @@ const ORDER_STATUS_CANCELED = 3;
 
 These files were created during the development process as different approaches were tried, but they contained outdated expectations that didn't match our final implementation. Removing them simplifies the codebase and makes it easier to maintain.
 
+## Specific Test Fix Notes
+
+*   **Symphony Integration (`SymphonyIntegration.test.ts`)**: Several complex assertion errors were resolved related to token balances (adapter, seller) during the two-stage settlement process, accounting for how CLOB fees and Symphony fees affect intermediate balances held by the adapter.
+*   **Remaining Known Issue**: One test, "Should calculate fees correctly for large orders" in `VaultFeeCalculation.test.ts`, still fails with a `Vault: token transfer failed` error, indicating a potential edge case or overflow in the settlement logic for very large orders that requires further investigation.
+
 ## Results
 
 After implementing all these fixes, the core functionality tests are now passing, confirming that the fundamental order matching, status handling, and settlement logic is working correctly. This provides a solid foundation for the SEI CLOB implementation.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the final, successful implementation of the SEI CLOB order matching algorithm. The implementation draws inspiration from DeepBook and Phoenix while maintaining our custody-free design. Key enhancements include ensuring orders are fully matched across multiple price levels, implementing robust price array sorting, simplifying order status logic for predictability, and resolving compilation issues through code refactoring. All end-to-end tests now pass.
+This document summarizes the final, successful implementation of the SEI CLOB order matching algorithm. The implementation draws inspiration from other DEX implementations while maintaining our custody-free design. Key enhancements include ensuring orders are fully matched across multiple price levels, implementing robust price array sorting, simplifying order status logic for predictability, and resolving compilation issues through code refactoring. All end-to-end tests now pass.
 
 ## Key Improvements
 

@@ -1,3 +1,9 @@
+/**
+ * Copyright © 2025 Prajwal Pitlehra
+ * This file is proprietary and confidential.
+ * Shared for evaluation purposes only. Redistribution or reuse is prohibited without written permission.
+ */
+
 // This setup uses Hardhat Ignition to manage smart contract deployments.
 // Learn more about it at https://hardhat.org/ignition
 

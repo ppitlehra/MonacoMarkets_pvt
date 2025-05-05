@@ -1,3 +1,12 @@
+## Intellectual Property Notice
+
+All code in this repository is the intellectual property of Prajwal Pitlehra.
+
+It is provided for evaluation purposes only and may not be copied, redistributed, or used in derivative works without explicit written permission.
+
+Copyright © 2025 Prajwal Pitlehra. All Rights Reserved.
+
+
 # MonacoMarkets CLOB Implementation
 
 ## Overview
@@ -51,45 +60,9 @@ This repository contains a Solidity implementation of a Central Limit Order Book
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/ppitlehra/MonacoMarkets_pvt.git
-    cd MonacoMarkets_pvt
+    git clone https://github.com/ppitlehra/MonacoMarkets.git
+    cd MonacoMarkets
     ```
 
 2.  **Install dependencies:**
-    ```bash
-    npm install
     ```
-
-### Compilation
-
-Compile the Solidity contracts:
-```bash
-npx hardhat compile
-```
-This will generate TypeChain artifacts in `typechain-types/` and contract artifacts in `artifacts/`.
-
-## Testing
-
-Run the full test suite (written in TypeScript using Hardhat/Waffle/Chai):
-```bash
-npx hardhat test
-```
-
-To run a specific test file:
-```bash
-npx hardhat test test/Vault.test.ts
-```
-
-## Core Components
-
--   **`CLOB.sol`**: The primary user-facing contract. Handles order placement (`placeOrder`, `placeMarketOrder`, etc.) and cancellation. Coordinates interactions between the `Book`, `State`, and `Vault`. Routes external swaps via the `SymphonyAdapter`.
--   **`Book.sol`**: Manages the order book data structures (bids and asks). Implements the matching logic based on price-time priority. Generates `Settlement` structs upon successful matches.
--   **`State.sol`**: Stores the canonical state of all orders (status, quantity remaining, etc.). Provides functions for creating, updating (filling/canceling), and retrieving orders. Access is restricted to authorized contracts (Admin, CLOB, Book, Vault, Adapter).
--   **`Vault.sol`**: Handles the financial aspects of trade settlement. In a custody-free manner, it pulls the required base/quote tokens and fees from traders (based on prior approvals) during `processSettlements` (called by `CLOB` after matching). It then transfers tokens between the buyer, seller, and the fee recipient. Also manages fee rate configuration.
--   **`SymphonyAdapter.sol`**: Acts as a bridge for external systems (like Symphony) to interact with the CLOB via a single, synchronous swap function (`executeSwapViaCLOB`). It translates the swap request into a CLOB market order, handles token transfers to/from the caller (e.g., `MockSymphony`), interacts with the `CLOB`, and returns the result.
-
-## License
-
-Copyright (c) 2025 Prajwal Pitlehra
-
-*(Suggestion: Consider adding a standard open-source license file like `LICENSE` (e.g., MIT, Apache 2.0) to clarify usage rights.)*

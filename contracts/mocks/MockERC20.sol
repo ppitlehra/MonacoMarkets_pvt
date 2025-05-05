@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: UNLICENSED
+// Copyright © 2025 Prajwal Pitlehra
+// This file is proprietary and confidential.
+// Shared for evaluation purposes only. Redistribution or reuse is prohibited without written permission.
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";

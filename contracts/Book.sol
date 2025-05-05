@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: MIT
+// Copyright © 2025 Prajwal Pitlehra
+// This file is proprietary and confidential.
+// Shared for evaluation purposes only. Redistribution or reuse is prohibited without written permission.
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -315,11 +318,13 @@ contract Book is IBook {
         if (order.isBuy) {
             uint256 priceLevelIndex = 0;
             bool stopMatching = false;
-            while (!stopMatching && priceLevelIndex < sellPrices.length && count < settlements.length) {
+            uint256 numSellPrices = sellPrices.length; // Cache length
+            while (!stopMatching && priceLevelIndex < numSellPrices && count < settlements.length) {
                 uint256 price = sellPrices[priceLevelIndex];
                 PriceLevel storage level = sellLevels[price];
                 uint256 levelIndex = 0;
-                while (!stopMatching && levelIndex < level.orderIds.length && count < settlements.length) {
+                uint256 numOrdersAtLevel = level.orderIds.length; // Cache length
+                while (!stopMatching && levelIndex < numOrdersAtLevel && count < settlements.length) {
                     if (quoteAmountLimit > 0 && totalQuoteSpent >= quoteAmountLimit) {
                         stopMatching = true; break;
                     }
@@ -328,34 +333,32 @@ contract Book is IBook {
                     IOrderInfo.Order memory makerOrder = IState(state).getOrder(makerOrderId);
                     if (takerOrder.trader == makerOrder.trader) { levelIndex++; continue; }
 
-                    uint256 baseDecimals = 18; // Assume
-                    uint256 quoteRequiredForFullFill = (makerQuantity * price) / (10**baseDecimals);
-                    uint256 baseFillable = makerQuantity; 
-                    uint256 quoteToUse = quoteRequiredForFullFill;
+                    uint256 baseDecimals = 18; // Assume baseDecimals is 18 for now
+                    // Calculate fill amounts using the helper function
+                    (uint256 baseToFill, uint256 quoteToSpend, bool stopMatchingNext) = _calculateFillAmounts(
+                        makerQuantity,
+                        price,
+                        baseDecimals,
+                        quoteAmountLimit,
+                        totalQuoteSpent
+                    );
 
-                    if (quoteAmountLimit > 0) {
-                        uint256 remainingQuote = quoteAmountLimit - totalQuoteSpent;
-                        if (quoteRequiredForFullFill > remainingQuote) {
-                            quoteToUse = remainingQuote;
-                            baseFillable = price == 0 ? 0 : (quoteToUse * (10**baseDecimals)) / price;
-                            stopMatching = true;
-                        }
-                    }
-                    baseFillable = Math.min(baseFillable, makerQuantity);
+                    // Update stopMatching based on helper function result
+                    stopMatching = stopMatchingNext;
 
-                    if(baseFillable > 0){
-                        totalQuoteSpent += (baseFillable * price) / (10**baseDecimals); 
-                        actualBaseFilled += baseFillable;
+                    if(baseToFill > 0){
+                        totalQuoteSpent += quoteToSpend; // Use quoteToSpend from helper
+                        actualBaseFilled += baseToFill;
                         settlements[count] = IOrderInfo.Settlement({
                             takerOrderId: order.id,
                             makerOrderId: makerOrderId,
                             price: price,
-                            quantity: baseFillable,
+                            quantity: baseToFill, // Use baseToFill from helper
                             processed: false
                         });
                         
                         // --- Accumulate Maker Update ---
-                        uint256 newMakerFilledQuantity = makerOrder.filledQuantity + baseFillable;
+                        uint256 newMakerFilledQuantity = makerOrder.filledQuantity + baseToFill; // Corrected variable name
                         IOrderInfo.OrderStatus newMakerStatus;
                         if (newMakerFilledQuantity >= makerOrder.quantity) {
                             newMakerStatus = IOrderInfo.OrderStatus.FILLED;
@@ -368,17 +371,17 @@ contract Book is IBook {
                             status: uint8(newMakerStatus),
                             filledQuantity: newMakerFilledQuantity
                         });
-                        emit OrderMatched(order.id, makerOrderId, price, baseFillable); // Emit event here
+                        emit OrderMatched(order.id, makerOrderId, price, baseToFill); // Emit event here
                         // REMOVED: processSettlementUpdates call
                         // --- End Accumulate ---
                         count++;
                     } 
 
-                    if (baseFillable == makerQuantity) {
+                    if (baseToFill == makerQuantity) {
                         levelIndex++; 
                     } else {
-                        level.orderQuantities[makerOrderId] -= baseFillable;
-                        level.totalQuantity -= baseFillable;
+                        level.orderQuantities[makerOrderId] -= baseToFill; // Corrected variable name
+                        level.totalQuantity -= baseToFill; // Corrected variable name
                         break; 
                     }
                     if (stopMatching) { break; }
@@ -392,11 +395,13 @@ contract Book is IBook {
             finalRemainingQuantity = 0; 
         } else { // Market SELL
             uint256 priceLevelIndex = 0;
-            while (remainingQuantity > 0 && priceLevelIndex < buyPrices.length && count < settlements.length) {
+            uint256 numBuyPrices = buyPrices.length; // Cache length
+            while (remainingQuantity > 0 && priceLevelIndex < numBuyPrices && count < settlements.length) {
                 uint256 price = buyPrices[priceLevelIndex];
                 PriceLevel storage level = buyLevels[price];
                 uint256 levelIndex = 0;
-                while (remainingQuantity > 0 && levelIndex < level.orderIds.length && count < settlements.length) {
+                uint256 numOrdersAtLevel = level.orderIds.length; // Cache length
+                while (remainingQuantity > 0 && levelIndex < numOrdersAtLevel && count < settlements.length) {
                     uint256 makerOrderId = level.orderIds[levelIndex];
                     uint256 makerQuantity = level.orderQuantities[makerOrderId];
                     IOrderInfo.Order memory makerOrder = IState(state).getOrder(makerOrderId);
@@ -467,8 +472,9 @@ contract Book is IBook {
         uint256 count = 0;
         totalQuoteSpent = 0;
         uint256 priceLevelIndex = 0;
+        uint256 numSellPrices = sellPrices.length; // Cache length
         IOrderInfo.Order memory takerOrder = IState(state).getOrder(order.id);
-        while (remainingQuantity > 0 && priceLevelIndex < sellPrices.length && count < settlements.length) {
+        while (remainingQuantity > 0 && priceLevelIndex < numSellPrices && count < settlements.length) {
             uint256 price = sellPrices[priceLevelIndex];
             if (order.orderType != IOrderInfo.OrderType.MARKET && price > order.price) {
                 break; 
@@ -476,7 +482,8 @@ contract Book is IBook {
 
             PriceLevel storage level = sellLevels[price];
             uint256 levelIndex = 0;
-            while (remainingQuantity > 0 && levelIndex < level.orderIds.length && count < settlements.length) {
+            uint256 numOrdersAtLevel = level.orderIds.length; // Cache length
+            while (remainingQuantity > 0 && levelIndex < numOrdersAtLevel && count < settlements.length) {
                 uint256 makerOrderId = level.orderIds[levelIndex];
                 uint256 makerQuantity = level.orderQuantities[makerOrderId];
                 IOrderInfo.Order memory makerOrder = IState(state).getOrder(makerOrderId);
@@ -544,8 +551,9 @@ contract Book is IBook {
         uint256 count = 0;
         totalQuoteSpent = 0;
         uint256 priceLevelIndex = 0;
+        uint256 numBuyPrices = buyPrices.length; // Cache length
         IOrderInfo.Order memory takerOrder = IState(state).getOrder(order.id);
-        while (remainingQuantity > 0 && priceLevelIndex < buyPrices.length && count < settlements.length) {
+        while (remainingQuantity > 0 && priceLevelIndex < numBuyPrices && count < settlements.length) {
             uint256 price = buyPrices[priceLevelIndex];
             if (order.orderType != IOrderInfo.OrderType.MARKET && price < order.price) {
                 break; 
@@ -790,5 +798,76 @@ contract Book is IBook {
             return sellLevels[price].orderQuantities[orderId];
         }
     }
-}
 
+    // --- Internal Helper Functions ---
+
+    /**
+     * @notice Calculates the amount of base tokens to fill and quote tokens to spend for a single maker order match.
+     * @param makerQuantity The quantity available in the maker order.
+     * @param price The matching price.
+     * @param baseDecimals The number of decimals for the base token.
+     * @param quoteAmountLimit The maximum amount of quote token the taker is willing to spend (0 if no limit).
+     * @param totalQuoteSpent The amount of quote token already spent by the taker in this transaction.
+     * @return baseToFill The amount of base token filled in this match.
+     * @return quoteToSpend The amount of quote token spent in this match.
+     * @return stopMatchingNext Boolean indicating if the matching should stop after this match due to quote limit.
+     */
+    function _calculateFillAmounts(
+        uint256 makerQuantity,
+        uint256 price,
+        uint256 baseDecimals,
+        uint256 quoteAmountLimit, // 0 if no limit
+        uint256 totalQuoteSpent
+    ) internal pure returns (uint256 baseToFill, uint256 quoteToSpend, bool stopMatchingNext) {
+        // Prevent division by zero; zero price orders shouldn't exist or be matched.
+        require(price > 0, "Book: Price cannot be zero for fill calculation");
+        // Use OpenZeppelin's Math library for safe multiplication and division.
+        uint256 quoteRequiredForFullFill = Math.mulDiv(makerQuantity, price, 10**baseDecimals);
+        baseToFill = makerQuantity;
+        quoteToSpend = quoteRequiredForFullFill;
+        stopMatchingNext = false;
+        uint256 remainingQuote = 0; // Declare remainingQuote here to ensure scope
+
+        if (quoteAmountLimit > 0) {
+            // Ensure totalQuoteSpent does not exceed quoteAmountLimit before calculating remainingQuote
+            if (totalQuoteSpent >= quoteAmountLimit) {
+                return (0, 0, true); // Already spent the limit, fill 0
+            }
+            remainingQuote = quoteAmountLimit - totalQuoteSpent;
+            if (quoteRequiredForFullFill > remainingQuote) {
+                quoteToSpend = remainingQuote;
+                // Calculate baseToFill based on the limited quoteToSpend
+                baseToFill = Math.mulDiv(quoteToSpend, 10**baseDecimals, price);
+                stopMatchingNext = true; // Stop after this match
+            }
+        }
+        // Ensure we don't fill more than the maker has available (can happen if baseToFill calculation from quote limit is slightly off due to rounding)
+        baseToFill = Math.min(baseToFill, makerQuantity);
+
+        // Recalculate quoteToSpend based on the final baseToFill to ensure consistency, especially if baseToFill was capped.
+        quoteToSpend = Math.mulDiv(baseToFill, price, 10**baseDecimals);
+
+        // Final check: ensure recalculated quoteToSpend doesn't exceed remaining limit (due to potential rounding up in mulDiv)
+        if (quoteAmountLimit > 0 && (totalQuoteSpent + quoteToSpend > quoteAmountLimit)) {
+             // This case should ideally not happen with correct mulDiv usage, but as a safeguard:
+             // If it exceeds, we cannot proceed with this fill amount.
+             // A more robust solution might involve recalculating baseToFill based on the exact remaining quote,
+             // but for simplicity, we prevent the fill if rounding causes an overspend.
+             // Alternatively, adjust quoteToSpend down slightly if possible, but that complicates baseToFill.
+             // Safest is to return 0 fill if the calculated spend exceeds the limit.
+             // Let's refine the logic slightly: Calculate baseToFill from remainingQuote directly if limited.
+             if (quoteRequiredForFullFill > remainingQuote) { // Recalculate baseToFill precisely from remainingQuote
+                 quoteToSpend = remainingQuote;
+                 baseToFill = Math.mulDiv(quoteToSpend, 10**baseDecimals, price);
+                 baseToFill = Math.min(baseToFill, makerQuantity); // Ensure it doesn't exceed maker's quantity
+                 quoteToSpend = Math.mulDiv(baseToFill, price, 10**baseDecimals); // Final quote spend based on potentially adjusted baseToFill
+                 stopMatchingNext = true;
+             }
+        }
+
+
+        return (baseToFill, quoteToSpend, stopMatchingNext);
+    }
+
+    // --- End Internal Helper Functions ---
+}
